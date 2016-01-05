@@ -35,6 +35,8 @@ GSRendererOGL::GSRendererOGL()
 	UserHacks_TCO_x          = (UserHacks_TCOffset & 0xFFFF) / -1000.0f;
 	UserHacks_TCO_y          = ((UserHacks_TCOffset >> 16) & 0xFFFF) / -1000.0f;
 
+	m_prim_overlap = PRIM_OVERLAP_UNKNOW;
+
 	if (!theApp.GetConfig("UserHacks", 0)) {
 		UserHacks_TCOffset       = 0;
 		UserHacks_TCO_x          = 0;
@@ -371,6 +373,8 @@ bool GSRendererOGL::EmulateBlending(GSDeviceOGL::PSSelector& ps_sel, bool DATE_G
 			// The fastest algo that requires a single pass
 			GL_INS("COLCLIP Free mode ENABLED");
 			ps_sel.colclip = 1;
+			ASSERT(sw_blending);
+			accumulation_blend = false; // disable the HDR algo
 		} else if (accumulation_blend) {
 			// A fast algo that requires 2 passes
 			GL_INS("COLCLIP Fast HDR mode ENABLED");
@@ -457,14 +461,48 @@ GSRendererOGL::PRIM_OVERLAP GSRendererOGL::PrimitiveOverlap()
 	// In order to speed up comparaison a boundind-box is accumulated. It removes a
 	// loop so code is much faster (check game virtua fighter). Besides it allow to check
 	// properly the Y order.
-	GSVector4i all(0);
-	for(size_t i = 0; i < count; i += 2) {
+	GSVector4i all;
+	//FIXME better vector operation
+	if (v[1].XYZ.Y < v[0].XYZ.Y) {
+		all.y = v[1].XYZ.Y;
+		all.w = v[0].XYZ.Y;
+	} else {
+		all.y = v[0].XYZ.Y;
+		all.w = v[1].XYZ.Y;
+	}
+	if (v[1].XYZ.X < v[0].XYZ.X) {
+		all.x = v[1].XYZ.X;
+		all.z = v[0].XYZ.X;
+	} else {
+		all.x = v[0].XYZ.X;
+		all.z = v[1].XYZ.X;
+	}
+
+	for(size_t i = 2; i < count; i += 2) {
 		GSVector4i sprite;
-		if (v[i+1].XYZ.Y < v[i].XYZ.Y) {
-			sprite = GSVector4i(v[i].XYZ.X, v[i+1].XYZ.Y, v[i+1].XYZ.X, v[i].XYZ.Y);
+		//FIXME better vector operation
+		if (v[i+1].XYZ.Y < v[i+0].XYZ.Y) {
+			sprite.y = v[i+1].XYZ.Y;
+			sprite.w = v[i+0].XYZ.Y;
 		} else {
-			sprite = GSVector4i(v[i].XYZ.X, v[i].XYZ.Y, v[i+1].XYZ.X, v[i+1].XYZ.Y);
+			sprite.y = v[i+0].XYZ.Y;
+			sprite.w = v[i+1].XYZ.Y;
 		}
+		if (v[i+1].XYZ.X < v[i+0].XYZ.X) {
+			sprite.x = v[i+1].XYZ.X;
+			sprite.z = v[i+0].XYZ.X;
+		} else {
+			sprite.x = v[i+0].XYZ.X;
+			sprite.z = v[i+1].XYZ.X;
+		}
+
+		// Be sure to get vertex in good order, otherwise .r* function doesn't
+		// work as expected.
+		ASSERT(sprite.x <= sprite.z);
+		ASSERT(sprite.y <= sprite.w);
+		ASSERT(all.x <= all.z);
+		ASSERT(all.y <= all.w);
+
 		if (all.rintersect(sprite).rempty()) {
 			all = all.runion(sprite);
 		} else {
@@ -532,7 +570,7 @@ void GSRendererOGL::SendDraw(bool require_barrier)
 		dev->DrawIndexedPrimitive();
 	} else if (m_prim_overlap == PRIM_OVERLAP_NO) {
 		ASSERT(GLLoader::found_GL_ARB_texture_barrier);
-		gl_TextureBarrier();
+		glTextureBarrier();
 		dev->DrawIndexedPrimitive();
 	} else {
 		// FIXME: Investigate: a dynamic check to pack as many primitives as possibles
@@ -550,7 +588,7 @@ void GSRendererOGL::SendDraw(bool require_barrier)
 		GL_PERF("Split single draw in %d draw", m_index.tail/nb_vertex);
 
 		for (size_t p = 0; p < m_index.tail; p += nb_vertex) {
-			gl_TextureBarrier();
+			glTextureBarrier();
 			dev->DrawIndexedPrimitive(p, nb_vertex);
 		}
 
@@ -802,26 +840,61 @@ void GSRendererOGL::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sour
 		ps_sel.wms = m_context->CLAMP.WMS;
 		ps_sel.wmt = m_context->CLAMP.WMT;
 
+		// Performance note:
+		// 1/ Don't set 0 as it is the default value
+		// 2/ Only keep aem when it is useful (avoid useless shader permutation)
 		if (ps_sel.shuffle) {
-			ps_sel.fmt = 0;
-		} else if (tex->m_palette) {
-			ps_sel.fmt = cpsm.fmt | 4;
-			ps_sel.ifmt = !tex->m_target ? 0
-				: (m_context->TEX0.PSM == PSM_PSMT4HL) ? 2
-				: (m_context->TEX0.PSM == PSM_PSMT4HH) ? 1
-				: 0;
+			// Force a 32 bits access (normally shuffle is done on 16 bits)
+			// ps_sel.tex_fmt = 0; // removed as an optimization
+			ps_sel.aem     = m_env.TEXA.AEM;
+			ASSERT(tex->m_target);
 
-			// In standard mode palette is only used when alpha channel of the RT is
-			// reinterpreted as an index. Star Ocean 3 uses it to emulate a stencil buffer.
-			// It is a very bad idea to force bilinear filtering on it.
-			if (tex->m_target)
+			GSVector4 ta(m_env.TEXA & GSVector4i::x000000ff());
+			ps_cb.MinF_TA = ta.xyxy() / 255.0f;
+
+			// FIXME: it is likely a bad idea to do the bilinear interpolation here
+			// bilinear &= m_vt.IsLinear();
+
+		} else if (tex->m_target) {
+			// Use an old target. AEM and index aren't resolved it must be done
+			// on the GPU
+
+			// Select the 32/24/16 bits color (AEM)
+			ps_sel.tex_fmt = cpsm.fmt;
+			ps_sel.aem     = m_env.TEXA.AEM;
+
+			GSVector4 ta(m_env.TEXA & GSVector4i::x000000ff());
+			ps_cb.MinF_TA = ta.xyxy() / 255.0f;
+
+			// Select the index format
+			if (tex->m_palette) {
+				// FIXME Potentially improve fmt field in GSLocalMemory
+				if (m_context->TEX0.PSM == PSM_PSMT4HL)
+					ps_sel.tex_fmt |= 1 << 2;
+				else if (m_context->TEX0.PSM == PSM_PSMT4HH)
+					ps_sel.tex_fmt |= 2 << 2;
+				else
+					ps_sel.tex_fmt |= 3 << 2;
+
+				// Alpha channel of the RT is reinterpreted as an index. Star
+				// Ocean 3 uses it to emulate a stencil buffer.  It is a very
+				// bad idea to force bilinear filtering on it.
 				bilinear &= m_vt.IsLinear();
+			}
 
-			//GL_INS("Use palette with format %d and index format %d", ps_sel.fmt, ps_sel.ifmt);
+		} else if (tex->m_palette) {
+			// Use a standard 8 bits texture. AEM is already done on the CLUT
+			// Therefore you only need to set the index
+			// ps_sel.aem     = 0; // removed as an optimization
+
+			// Note 4 bits indexes are converted to 8 bits
+			ps_sel.tex_fmt = 3 << 2;
+
 		} else {
-			ps_sel.fmt = cpsm.fmt;
+			// Standard texture. Both index and AEM expansion were already done by the CPU.
+			// ps_sel.tex_fmt = 0; // removed as an optimization
+			// ps_sel.aem     = 0; // removed as an optimization
 		}
-		ps_sel.aem = m_env.TEXA.AEM;
 
 		if (m_context->TEX0.TFX == TFX_MODULATE && m_vt.m_eq.rgba == 0xFFFF && m_vt.m_min.c.eq(GSVector4i(128))) {
 			// Micro optimization that reduces GPU load (removes 5 instructions on the FS program)
@@ -854,15 +927,14 @@ void GSRendererOGL::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sour
 
 		// TC Offset Hack
 		ps_sel.tcoffsethack = !!UserHacks_TCOffset;
-		ps_cb.TC_OH_TS = GSVector4(1/16.0f, 1/16.0f, UserHacks_TCO_x, UserHacks_TCO_y).xyxy() / WH.xyxy();
+		ps_cb.TC_OH_TS = GSVector4(1/16.0f, 1/16.0f, UserHacks_TCO_x, UserHacks_TCO_y) / WH.xyxy();
 
-		GSVector4 ta(m_env.TEXA & GSVector4i::x000000ff());
-		ps_cb.MinF_TA = ta.xyxy() / WH.xyxy(GSVector4(255, 255));
 
 		// Only enable clamping in CLAMP mode. REGION_CLAMP will be done manually in the shader
-		ps_ssel.tau = (m_context->CLAMP.WMS != CLAMP_CLAMP);
-		ps_ssel.tav = (m_context->CLAMP.WMT != CLAMP_CLAMP);
-		ps_ssel.ltf = bilinear && simple_sample;
+		ps_ssel.tau   = (m_context->CLAMP.WMS != CLAMP_CLAMP);
+		ps_ssel.tav   = (m_context->CLAMP.WMT != CLAMP_CLAMP);
+		ps_ssel.ltf   = bilinear && simple_sample;
+		ps_ssel.aniso = simple_sample;
 
 		// Setup Texture ressources
 		dev->SetupSampler(ps_ssel);
@@ -1013,7 +1085,7 @@ void GSRendererOGL::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sour
 	if (hdr_rt) {
 		GSVector4 dRect(ComputeBoundingBox(rtscale, rtsize));
 		GSVector4 sRect = dRect / GSVector4(rtsize.x, rtsize.y).xyxy();
-		dev->StretchRect(hdr_rt, sRect, rt, dRect, 4, false);
+		dev->StretchRect(hdr_rt, sRect, rt, dRect, ShaderConvert_MOD_256, false);
 
 		dev->Recycle(hdr_rt);
 	}

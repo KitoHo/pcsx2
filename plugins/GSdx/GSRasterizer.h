@@ -26,11 +26,7 @@
 #include "GSFunctionMap.h"
 #include "GSAlignedClass.h"
 #include "GSPerfMon.h"
-#ifdef ENABLE_BOOST
 #include "GSThread_CXX11.h"
-#else
-#include "GSThread.h"
-#endif
 
 __aligned(class, 32) GSRasterizerData : public GSAlignedClass<32>
 {
@@ -199,29 +195,8 @@ protected:
 		void Process(shared_ptr<GSRasterizerData>& item);
 	};
 
-#ifdef ENABLE_BOOST
-	class GSWorkerSpin : public GSJobQueueSpin<shared_ptr<GSRasterizerData>, 256>
-	{
-		GSRasterizer* m_r;
-
-	public:
-		GSWorkerSpin(GSRasterizer* r);
-		virtual ~GSWorkerSpin();
-
-		int GetPixels(bool reset);
-
-		// GSJobQueue
-
-		void Process(shared_ptr<GSRasterizerData>& item);
-	};
-#endif
-
 	GSPerfMon* m_perfmon;
-#ifdef ENABLE_BOOST
-	vector<IGSJobQueue<shared_ptr<GSRasterizerData> > *> m_workers;
-#else
 	vector<GSWorker*> m_workers;
-#endif
 	uint8* m_scanline;
 
 	GSRasterizerList(int threads, GSPerfMon* perfmon);
@@ -229,7 +204,7 @@ protected:
 public:
 	virtual ~GSRasterizerList();
 
-	template<class DS> static IRasterizer* Create(int threads, GSPerfMon* perfmon, bool spin_thread = false)
+	template<class DS> static IRasterizer* Create(int threads, GSPerfMon* perfmon)
 	{
 		threads = std::max<int>(threads, 0);
 
@@ -243,14 +218,7 @@ public:
 
 			for(int i = 0; i < threads; i++)
 			{
-#ifdef ENABLE_BOOST
-				if (spin_thread)
-					rl->m_workers.push_back(new GSWorkerSpin(new GSRasterizer(new DS(), i, threads, perfmon)));
-				else
-					rl->m_workers.push_back(new GSWorker(new GSRasterizer(new DS(), i, threads, perfmon)));
-#else
 				rl->m_workers.push_back(new GSWorker(new GSRasterizer(new DS(), i, threads, perfmon)));
-#endif
 			}
 
 			return rl;

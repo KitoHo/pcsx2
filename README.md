@@ -19,7 +19,7 @@ Installers and binaries for both Windows and Linux are available from **[our hom
 * 512MB RAM (note Vista needs at least 2GB to run reliably)
 
 ## Recommended
-* Windows Vista / Windows 7 (32bit or 64bit) with the [latest DirectX](http://www.microsoft.com/en-us/download/details.aspx?id=35)
+* Windows Vista / Windows 7 (32bit or 64bit) with the [latest DirectX](https://www.microsoft.com/en-us/download/details.aspx?id=8109)
 * CPU: Intel Core 2 Duo @ 3.2ghz or better
 * GPU: 8800gt or better (for Direct3D10 support)
 * RAM: 1GB on Linux/Windows XP, 2GB or more on Vista
@@ -30,3 +30,11 @@ Installers and binaries for both Windows and Linux are available from **[our hom
 
 | ![Pro Evo 2009](https://dl.dropboxusercontent.com/u/743491/PCSX2/ProEvo2009.jpg "Pro Evo 2009") | ![Megaman X8](https://dl.dropboxusercontent.com/u/743491/PCSX2/MegamanX8.jpg "Megaman X8") | ![TOTA](https://dl.dropboxusercontent.com/u/743491/PCSX2/TOTA.jpg "TOTA")
 |:----:|:----:|:----:|
+
+# Quality Assurance
+
+**Build** | **Status**
+--------|--------
+Linux   | [![Travis Build Status](https://travis-ci.org/PCSX2/pcsx2.svg?branch=master)](https://travis-ci.org/PCSX2/pcsx2)
+Window  | [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/b67odm0dd506co78/branch/master?svg=true)](https://ci.appveyor.com/project/gregory38/pcsx2/branch/master)
+Coverity| [![Coverity Scan Build Status](https://scan.coverity.com/projects/6310/badge.svg)](https://scan.coverity.com/projects/6310)

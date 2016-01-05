@@ -241,6 +241,22 @@ public:
 		void SanityCheck();
 	};
 
+	struct UiTemplateOptions {
+		UiTemplateOptions();
+		void LoadSave(IniInterface& conf);
+
+		wxString LimiterUnlimited;
+		wxString LimiterTurbo;
+		wxString LimiterSlowmo;
+		wxString LimiterNormal;
+		wxString OutputFrame;
+		wxString OutputField;
+		wxString OutputProgressive;
+		wxString OutputInterlaced;
+		wxString Paused;
+		wxString TitleTemplate;
+	};
+
 public:
 	wxPoint		MainGuiPosition;
 
@@ -311,6 +327,7 @@ public:
 	FilenameOptions			BaseFilenames;
 	GSWindowOptions			GSWindow;
 	FramerateOptions		Framerate;
+	UiTemplateOptions		Templates;
 	
 	// PCSX2-core emulation options, which are passed to the emu core prior to initiating
 	// an emulation session.  Note these are the options saved into the GUI ini file and

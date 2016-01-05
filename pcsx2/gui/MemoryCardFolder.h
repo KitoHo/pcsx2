@@ -24,6 +24,8 @@
 #include "PluginCallbacks.h"
 #include "AppConfig.h"
 
+//#define DEBUG_WRITE_FOLDER_CARD_IN_MEMORY_TO_FILE_ON_CHANGE
+
 // --------------------------------------------------------------------------------------
 //  Superblock Header Struct
 // --------------------------------------------------------------------------------------
@@ -158,6 +160,9 @@ struct MemoryCardFileEntry {
 
 	static const u32 DefaultDirMode = Mode_Read | Mode_Write | Mode_Execute | Mode_Directory | Mode_Unknown0x0400 | Mode_Used;
 	static const u32 DefaultFileMode = Mode_Read | Mode_Write | Mode_Execute | Mode_File | Mode_Unknown0x0080 | Mode_Unknown0x0400 | Mode_Used;
+
+	// used in the cluster entry of empty files on real memory cards, as far as we know
+	static const u32 EmptyFileCluster = 0xFFFFFFFFu;
 };
 #pragma pack(pop)
 
@@ -192,6 +197,14 @@ struct MemoryCardFileMetadataReference {
 
 	// returns true if filename was modified and metadata containing the actual filename should be written
 	bool GetPath( wxFileName* fileName ) const;
+
+	// gives the internal memory card file system path, not to be used for writes to the host file system
+	void GetInternalPath( std::string* fileName ) const;
+};
+
+struct MemoryCardFileHandleStructure {
+	MemoryCardFileMetadataReference* fileRef;
+	wxFFile* fileHandle;
 };
 
 // --------------------------------------------------------------------------------------
@@ -200,7 +213,7 @@ struct MemoryCardFileMetadataReference {
 // Small helper class to keep memory card files opened between calls to Read()/Save() 
 class FileAccessHelper {
 protected:
-	std::map<const MemoryCardFileEntry* const, wxFFile*> m_files;
+	std::map<std::string, MemoryCardFileHandleStructure> m_files;
 	MemoryCardFileMetadataReference* m_lastWrittenFileRef; // we remember this to reduce redundant metadata checks/writes
 
 public:
@@ -215,6 +228,9 @@ public:
 	void CloseAll();
 	// Flush the written data of all open files to the file system
 	void FlushAll();
+
+	// Force metadata to be written on next file access, not sure if this is necessary but it can't hurt.
+	void ClearMetadataWriteState();
 
 	// removes characters from a PS2 file name that would be illegal in a Windows file system
 	// returns true if any changes were made
@@ -256,7 +272,7 @@ public:
 	static const u32 NextDataClusterMask = 0x7FFFFFFFu;
 	static const u32 DataClusterInUseMask = 0x80000000u;
 
-	static const int FramesAfterWriteUntilFlush = 60;
+	static const int FramesAfterWriteUntilFlush = 2;
 
 protected:
 	union superBlockUnion {
@@ -344,6 +360,8 @@ public:
 	void NextFrame();
 
 	static void CalculateECC( u8* ecc, const u8* data );
+
+	void WriteToFile( const wxString& filename );
 
 protected:
 	// initializes memory card data, as if it was fresh from the factory

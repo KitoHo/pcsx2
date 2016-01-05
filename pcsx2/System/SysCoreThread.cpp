@@ -55,7 +55,10 @@ SysCoreThread::SysCoreThread()
 
 SysCoreThread::~SysCoreThread() throw()
 {
-	SysCoreThread::Cancel();
+	try {
+		SysCoreThread::Cancel();
+	}
+	DESTRUCTOR_CATCHALL
 }
 
 void SysCoreThread::Cancel( bool isBlocking )
@@ -131,6 +134,7 @@ void SysCoreThread::Reset()
 	GetVmMemory().DecommitAll();
 	SysClearExecutionCache();
 	sApp.PostAppMethod( &Pcsx2App::leaveDebugMode );
+	g_FrameCount = 0;
 }
 
 

@@ -13,12 +13,6 @@ endif()
 
 
 set(CommonFlags
-    # GCC-4.6 crash pcsx2 during the binding of plugins at startup...
-    # Disable this optimization for the moment
-    # GCC-4.9 update:
-    # Crash when you start a game. Likely a stack corruption/alignment
-    -fno-omit-frame-pointer
-    # END GCC-4.6
     -fno-strict-aliasing
     -Wno-parentheses
     -Wstrict-aliasing # Allow to track strict aliasing issue.
@@ -31,6 +25,12 @@ set(CommonFlags
 #Clang doesn't support a few common flags that GCC does.
 if(NOT USE_CLANG)
 	set(pcsx2FinalFlags ${CommonFlags} -fno-guess-branch-probability -fno-dse -fno-tree-dse)
+endif()
+
+if ("${PGO}" STREQUAL "generate")
+    set(pcsx2FinalFlags ${pcsx2FinalFlags} -fprofile-generate)
+elseif("${PGO}" STREQUAL "use")
+    set(pcsx2FinalFlags ${pcsx2FinalFlags} -fprofile-use)
 endif()
 
 # Debug - Build
@@ -377,7 +377,7 @@ set(pcsx2GuiResources
     ${res_bin}/ConfigIcon_Plugins.h
     ${res_bin}/ConfigIcon_Speedhacks.h
     ${res_bin}/ConfigIcon_Video.h
-    ${res_bin}/Dualshock.h
+    ${res_bin}/Logo.h
     ${res_bin}/Breakpoint_Active.h
     ${res_bin}/Breakpoint_Inactive.h
     )
@@ -400,6 +400,7 @@ set(pcsx2IPUHeaders
 
 # Linux sources
 set(pcsx2LinuxSources
+	Linux/LnxConsolePipe.cpp
 	Linux/LnxKeyCodes.cpp
     Linux/LnxFlatFileReader.cpp
     )
@@ -633,28 +634,27 @@ set(pcsx2FinalSources
 )
 
 set(pcsx2FinalLibs
-	Utilities
-	x86emitter
-	${wxWidgets_LIBRARIES}
-	${GTK2_LIBRARIES}
-	${ZLIB_LIBRARIES}
+    Utilities
+    x86emitter
+    ${wxWidgets_LIBRARIES}
+    ${GTK2_LIBRARIES}
+    ${ZLIB_LIBRARIES}
     ${AIO_LIBRARIES}
+    ${GCOV_LIBRARIES}
 )
 
 # additonal include directories
 include_directories(
-					gui
-					x86
-                    ${CMAKE_BINARY_DIR}/pcsx2/gui
+    gui
+    x86
+    ${CMAKE_BINARY_DIR}/pcsx2/gui
 )
 
 ### Generate the resources files
 file(MAKE_DIRECTORY ${res_bin})
 
-add_custom_command(OUTPUT  "${res_bin}/Dualshock.h"  COMMAND perl ${CMAKE_SOURCE_DIR}/linux_various/hex2h.pl "${res_src}/Dualshock.jpg" "${res_bin}/Dualshock" )
-
 foreach(res_file IN ITEMS
-        AppIcon16 AppIcon32 AppIcon64 BackgroundLogo ButtonIcon_Camera
+        AppIcon16 AppIcon32 AppIcon64 BackgroundLogo Logo ButtonIcon_Camera
         ConfigIcon_Appearance ConfigIcon_Cpu ConfigIcon_Gamefixes ConfigIcon_MemoryCard
         ConfigIcon_Paths ConfigIcon_Plugins ConfigIcon_Speedhacks ConfigIcon_Video Breakpoint_Active Breakpoint_Inactive)
     add_custom_command(OUTPUT  "${res_bin}/${res_file}.h" COMMAND perl ${CMAKE_SOURCE_DIR}/linux_various/hex2h.pl "${res_src}/${res_file}.png" "${res_bin}/${res_file}" )

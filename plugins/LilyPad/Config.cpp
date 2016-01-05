@@ -30,6 +30,25 @@
 // Needed to know if raw input is available.  It requires XP or higher.
 #include "RawInput.h"
 
+// Hacks or configurations which PCSX2 needs with a specific value
+void PCSX2_overrideConfig(GeneralConfig& config_in_out) {
+	config_in_out.disableScreenSaver = 0; // Not required - handled internally by PCSX2
+	config_in_out.escapeFullscreenHack = 0; // Not required - handled internally by PCSX2
+	config_in_out.saveStateTitle = 0; // Not required - handled internally by PCSX2
+}
+
+// Dialog widgets which should be disabled - mostly matching PCSX2_overrideConfig
+const UINT* PCSX2_disabledWidgets() {
+	static const UINT disabledWidgets[] = {
+		IDC_DISABLE_SCREENSAVER,
+		IDC_ESCAPE_FULLSCREEN_HACK,
+		IDC_SAVE_STATE_TITLE,
+		IDC_ANALOG_START1, // start in analog mode - only useful for PS1
+		0
+	};
+	return disabledWidgets;
+}
+
 GeneralConfig config;
 
 // 1 if running inside a PS2 emulator.  Set to 1 on any
@@ -71,11 +90,11 @@ const GeneralSettingsBool BoolOptionsInfo[] = {
 	{L"Multitap 1", IDC_MULTITAP1, 0},
 	{L"Multitap 2", IDC_MULTITAP2, 0},
 
-	{L"Escape Fullscreen Hack", IDC_ESCAPE_FULLSCREEN_HACK, 1},
-	{L"Disable Screen Saver", IDC_DISABLE_SCREENSAVER, 1},
+	{L"Escape Fullscreen Hack", IDC_ESCAPE_FULLSCREEN_HACK, 1}, // Not required for PCSX2
+	{L"Disable Screen Saver", IDC_DISABLE_SCREENSAVER, 1}, // Not required for PCSX2
 	{L"Logging", IDC_DEBUG_FILE, 0},
 
-	{L"Save State in Title", IDC_SAVE_STATE_TITLE, 0}, //No longer required, PCSX2 now handles it - avih 2011-05-17
+	{L"Save State in Title", IDC_SAVE_STATE_TITLE, 0}, // Not required for PCSX2
 	{L"GH2", IDC_GH2_HACK, 0},
 	{L"Turbo Key Hack", IDC_TURBO_KEY_HACK, 0},
 
@@ -302,6 +321,25 @@ void CALLBACK PADsetSettingsDir( const char *dir )
 	wcscat_s(iniFile, L"/LilyPad.ini");
 
 	createIniDir = false;
+
+	FILE *temp = nullptr;
+	_wfopen_s(&temp, iniFile, L"r");
+	if (!temp) { // File not found, possibly.
+		HRSRC res = FindResource(hInst, MAKEINTRESOURCE(IDR_INI1), RT_RCDATA);
+		if (!res) return;
+		HGLOBAL data = LoadResource(hInst, res);
+		if (!data) return;
+		size_t size = SizeofResource(hInst, res);
+		u8 *fdata = (u8*)LockResource(data);
+		_wfopen_s(&temp, iniFile, L"w");
+		if (!temp) return;
+		fwrite(fdata, 1, size, temp);
+		fclose(temp);
+	}
+	else {
+		fclose(temp);
+	}
+	
 }
 
 int GetBinding(int port, int slot, int index, Device *&dev, Binding *&b, ForceFeedbackBinding *&ffb);
@@ -1026,6 +1064,9 @@ int LoadSettings(int force, wchar_t *file) {
 	config.multipleBinding = multipleBinding;
 
 	RefreshEnabledDevicesAndDisplay(1);
+
+	if (ps2e)
+		PCSX2_overrideConfig(config);
 
 	return 0;
 }
@@ -1765,7 +1806,7 @@ void UpdatePadList(HWND hWnd) {
 		CheckDlgButton(hWnd, IDC_ANALOG_START1, BST_CHECKED*config.padConfigs[port][slot].autoAnalog);
 	}
 	EnableWindow(hWndCombo, enable);
-	EnableWindow(hWndAnalog, enable && !ps2e);
+	EnableWindow(hWndAnalog, enable);
 	//ListView_SetExtendedListViewStyleEx(hWndList, LVS_EX_DOUBLEBUFFER|LVS_EX_ONECLICKACTIVATE, LVS_EX_DOUBLEBUFFER|LVS_EX_ONECLICKACTIVATE);
 	recurse = 0;
 }
@@ -1795,6 +1836,16 @@ INT_PTR CALLBACK GeneralDialogProc(HWND hWnd, unsigned int msg, WPARAM wParam, L
 				SendMessage(hWndCombo, CB_ADDSTRING, 0, (LPARAM) L"Unplugged");
 				SendMessage(hWndCombo, CB_ADDSTRING, 0, (LPARAM) L"Dualshock 2");
 				SendMessage(hWndCombo, CB_ADDSTRING, 0, (LPARAM) L"Guitar");
+
+				if (ps2e) {
+					// This disabled some widgets which are not required for PCSX2.
+					// Currently the trigger is that it's in PS2 emulation mode
+					const UINT* toDisable = PCSX2_disabledWidgets();
+					while (toDisable && *toDisable) {
+						EnableWindow(GetDlgItem(hWnd, *toDisable), 0);
+						toDisable++;
+					}
+				}
 			}
 		}
 		UpdatePadPages();
@@ -1925,7 +1976,6 @@ INT_PTR CALLBACK GeneralDialogProc(HWND hWnd, unsigned int msg, WPARAM wParam, L
 					// sound plugin plays with it.
 					SetVolume(100);
 				}
-				config.vistaVolume = 100;
 			}
 
 			for (i=0; i<4; i++) {

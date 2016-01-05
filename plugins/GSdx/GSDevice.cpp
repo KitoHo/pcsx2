@@ -35,6 +35,7 @@ GSDevice::GSDevice()
 	, m_fxaa(NULL)
 	, m_shadeboost(NULL)
 	, m_1x1(NULL)
+	, m_current(NULL)
 	, m_frame(0)
 {
 	memset(&m_vertex, 0, sizeof(m_vertex));
@@ -112,7 +113,9 @@ void GSDevice::Present(const GSVector4i& r, int shader)
 
 	if(m_current)
 	{
-		static int s_shader[5] = {0, 5, 6, 8, 9}; // FIXME
+		static int s_shader[5] = {ShaderConvert_COPY, ShaderConvert_SCANLINE,
+			ShaderConvert_DIAGONAL_FILTER, ShaderConvert_TRIANGULAR_FILTER,
+			ShaderConvert_COMPLEX_FILTER}; // FIXME
 
 		Present(m_current, m_backbuffer, GSVector4(r), s_shader[shader]);
 	}

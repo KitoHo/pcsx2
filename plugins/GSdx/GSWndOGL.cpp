@@ -24,7 +24,7 @@
 
 #if defined(__linux__)
 GSWndOGL::GSWndOGL()
-	: m_NativeWindow(0), m_NativeDisplay(NULL), m_swapinterval(NULL)
+	: m_NativeWindow(0), m_NativeDisplay(NULL), m_context(0), m_swapinterval(NULL)
 {
 }
 
@@ -124,7 +124,7 @@ void GSWndOGL::CheckContext()
 	int glxMajorVersion, glxMinorVersion;
 	glXQueryVersion(m_NativeDisplay, &glxMajorVersion, &glxMinorVersion);
 	if (glXIsDirect(m_NativeDisplay, m_context))
-		fprintf(stderr, "glX-Version %d.%d with Direct Rendering\n", glxMajorVersion, glxMinorVersion);
+		fprintf(stdout, "glX-Version %d.%d with Direct Rendering\n", glxMajorVersion, glxMinorVersion);
 	else {
 		fprintf(stderr, "glX-Version %d.%d with Indirect Rendering !!! It won't support properly opengl\n", glxMajorVersion, glxMinorVersion);
 		throw GSDXRecoverableError();

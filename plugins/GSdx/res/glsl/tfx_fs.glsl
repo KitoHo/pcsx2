@@ -6,7 +6,9 @@
 #define FMT_32 0
 #define FMT_24 1
 #define FMT_16 2
-#define FMT_PAL 4 /* flag bit */
+
+#define PS_PAL_FMT (PS_TEX_FMT >> 2)
+#define PS_AEM_FMT (PS_TEX_FMT & 3)
 
 // APITRACE_DEBUG enables forced pixel output to easily detect
 // the fragment computed by primitive
@@ -46,10 +48,23 @@ layout(binding = 3) uniform sampler2D RtSampler; // note 2 already use by the im
 #ifndef DISABLE_GL42_image
 #if PS_DATE > 0
 // FIXME how to declare memory access
-layout(r32i, binding = 2) coherent uniform iimage2D img_prim_min;
-// Don't enable it. Discard fragment can still write in the depth buffer
-// it breaks shadow in Shin Megami Tensei Nocturne
-//layout(early_fragment_tests) in;
+layout(r32i, binding = 2) uniform iimage2D img_prim_min;
+// WARNING:
+// You can't enable it if you discard the fragment. The depth is still
+// updated (shadow in Shin Megami Tensei Nocturne)
+//
+// early_fragment_tests must still be enabled in the first pass of the 2 passes algo
+// First pass search the first primitive that will write the bad alpha value. Value
+// won't be written if the fragment fails the depth test.
+//
+// In theory the best solution will be do
+// 1/ copy the depth buffer
+// 2/ do the full depth (current depth writes are disabled)
+// 3/ restore the depth buffer for 2nd pass
+// Of course, it is likely too costly.
+#if PS_DATE == 1 || PS_DATE == 2
+layout(early_fragment_tests) in;
+#endif
 
 // I don't remember why I set this parameter but it is surely useless
 //layout(pixel_center_integer) in vec4 gl_FragCoord;
@@ -162,13 +177,13 @@ vec4 sample_4_index(vec4 uv)
 
     uvec4 i = uvec4(c * 255.0f + 0.5f); // Denormalize value
 
-#if PS_IFMT == 1
-    // 4HH
-    return vec4(i >> 4u) / 255.0f;
-
-#elif PS_IFMT == 2
-    // 4HL
+#if PS_PAL_FMT == 1
+	// 4HL
     return vec4(i & 0xFu) / 255.0f;
+
+#elif PS_PAL_FMT == 2
+	// 4HH
+    return vec4(i >> 4u) / 255.0f;
 
 #else
     // Most of texture will hit this code so keep normalized float value
@@ -207,7 +222,7 @@ vec4 sample_color(vec2 st, float q)
     vec2 dd;
 
     // FIXME I'm not sure this condition is useful (I think code will be optimized)
-#if (PS_LTF == 0 && PS_FMT == FMT_32 && PS_WMS < 2 && PS_WMT < 2)
+#if (PS_LTF == 0 && PS_AEM_FMT == FMT_32 && PS_PAL_FMT == 0 && PS_WMS < 2 && PS_WMT < 2)
     // No software LTF and pure 32 bits RGBA texure without special texture wrapping
     c[0] = sample_c(st);
 #ifdef TEX_COORD_DEBUG
@@ -221,6 +236,13 @@ vec4 sample_color(vec2 st, float q)
     {
         uv = st.xyxy + HalfTexel;
         dd = fract(uv.xy * WH.zw);
+#if (PS_FST == 0)
+        // Background in Shin Megami Tensei Lucifers
+        // I suspect that uv isn't a standard number, so fract is outside of the [0;1] range
+        // Note: it is free on GPU but let's do it only for float coordinate
+        // Strangely Dx doesn't suffer from this issue.
+        dd = clamp(dd, vec2(0.0f), vec2(1.0f));
+#endif
     }
     else
     {
@@ -229,14 +251,12 @@ vec4 sample_color(vec2 st, float q)
 
     uv = clamp_wrap_uv(uv);
 
-    if((PS_FMT & FMT_PAL) != 0)
-    {
-        c = sample_4p(sample_4_index(uv));
-    }
-    else
-    {
-        c = sample_4c(uv);
-    }
+#if PS_PAL_FMT != 0
+    c = sample_4p(sample_4_index(uv));
+#else
+    c = sample_4c(uv);
+#endif
+
 #ifdef TEX_COORD_DEBUG
     c[0].rg = uv.xy;
     c[1].rg = uv.xy;
@@ -246,18 +266,17 @@ vec4 sample_color(vec2 st, float q)
 
 #endif
 
-    // PERF: see the impact of the exansion before/after the interpolation
-    for (int i = 0; i < 4; i++)
-    {
-        // PERF note: using dot product reduces by 1 the number of instruction
-        // but I'm not sure it is equivalent neither faster.
+	// PERF note: using dot product reduces by 1 the number of instruction
+	// but I'm not sure it is equivalent neither faster.
+	for (int i = 0; i < 4; i++)
+	{
         //float sum = dot(c[i].rgb, vec3(1.0f));
-#if ((PS_FMT & ~FMT_PAL) == FMT_24)
-        c[i].a = ( (PS_AEM == 0) || any(bvec3(c[i].rgb))  ) ? TA.x : 0.0f;
-        //c[i].a = ( (PS_AEM == 0) || (sum > 0.0f) ) ? TA.x : 0.0f;
-#elif ((PS_FMT & ~FMT_PAL) == FMT_16)
-        c[i].a = c[i].a >= 0.5 ? TA.y : ( (PS_AEM == 0) || any(bvec3(c[i].rgb)) ) ? TA.x : 0.0f;
-        //c[i].a = c[i].a >= 0.5 ? TA.y : ( (PS_AEM == 0) || (sum > 0.0f) ) ? TA.x : 0.0f;
+#if (PS_AEM_FMT == FMT_24)
+		c[i].a = ( (PS_AEM == 0) || any(bvec3(c[i].rgb))  ) ? TA.x : 0.0f;
+		//c[i].a = ( (PS_AEM == 0) || (sum > 0.0f) ) ? TA.x : 0.0f;
+#elif (PS_AEM_FMT == FMT_16)
+		c[i].a = c[i].a >= 0.5 ? TA.y : ( (PS_AEM == 0) || any(bvec3(c[i].rgb)) ) ? TA.x : 0.0f;
+		//c[i].a = c[i].a >= 0.5 ? TA.y : ( (PS_AEM == 0) || (sum > 0.0f) ) ? TA.x : 0.0f;
 #endif
     }
 
@@ -565,15 +584,15 @@ void ps_main()
     // Pixel with alpha equal to 1 will failed (128-255)
     if (C.a > 127.5f) {
         imageAtomicMin(img_prim_min, ivec2(gl_FragCoord.xy), gl_PrimitiveID);
-        return;
     }
+    return;
 #elif PS_DATE == 2 && !defined(DISABLE_GL42_image)
     // DATM == 1
     // Pixel with alpha equal to 0 will failed (0-127)
     if (C.a < 127.5f) {
         imageAtomicMin(img_prim_min, ivec2(gl_FragCoord.xy), gl_PrimitiveID);
-        return;
     }
+    return;
 #endif
 
     ps_blend(C, alpha_blend);

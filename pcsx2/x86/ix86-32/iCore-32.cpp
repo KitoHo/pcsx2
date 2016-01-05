@@ -22,6 +22,7 @@
 #include "x86emitter/x86emitter.h"
 #include "R3000A.h"
 
+using namespace x86Emitter;
 
 // yay sloppy crap needed until we can remove dependency on this hippopotamic
 // landmass of shared code. (air)
@@ -155,8 +156,7 @@ int _getFreeX86reg(int mode)
 	}
 
 	pxFailDev( "x86 register allocation error" );
-
-	return -1;
+	throw Exception::FailedToAllocateRegister();
 }
 
 void _flushCachedRegs()
@@ -191,7 +191,10 @@ void _flushConstRegs()
 		if (!GPR_IS_CONST1(i) || g_cpuFlushedConstReg & (1<<i)) continue;
 		if (g_cpuConstRegs[i].SL[j] != 0) continue;
 
-		if (eaxval != 0) XOR32RtoR(EAX, EAX), eaxval = 0;
+		if (eaxval != 0) {
+			XOR32RtoR(EAX, EAX);
+			eaxval = 0;
+		}
 
 		MOV32RtoM((uptr)&cpuRegs.GPR.r[i].SL[j], EAX);
 		done[j] |= 1<<i;
@@ -204,8 +207,14 @@ void _flushConstRegs()
 		if (!GPR_IS_CONST1(i) || g_cpuFlushedConstReg & (1<<i)) continue;
 		if (g_cpuConstRegs[i].SL[j] != -1) continue;
 
-		if (eaxval > 0) XOR32RtoR(EAX, EAX), eaxval = 0;
-		if (eaxval == 0) NOT32R(EAX), eaxval = -1;
+		if (eaxval > 0) {
+			XOR32RtoR(EAX, EAX);
+			eaxval = 0;
+		}
+		if (eaxval == 0) {
+			NOT32R(EAX);
+			eaxval = -1;
+		}
 
 		MOV32RtoM((uptr)&cpuRegs.GPR.r[i].SL[j], EAX);
 		done[j + 2] |= 1<<i;
@@ -280,7 +289,7 @@ int _allocX86reg(int x86reg, int type, int reg, int mode)
 
 			if( x86reg >= 0 ) {
 				// requested specific reg, so return that instead
-				if( i != x86reg ) {
+				if( i != (uint)x86reg ) {
 					if( x86regs[i].mode & MODE_READ ) readfromreg = i;
 					mode |= x86regs[i].mode&MODE_WRITE;
 					x86regs[i].inuse = 0;
@@ -542,7 +551,7 @@ int  _getFreeMMXreg()
 	}
 
 	pxFailDev( "mmx register allocation error" );
-	return -1;
+	throw Exception::FailedToAllocateRegister();
 }
 
 int _allocMMXreg(int mmxreg, int reg, int mode)
@@ -583,7 +592,8 @@ int _allocMMXreg(int mmxreg, int reg, int mode)
 		}
 	}
 
-	if (mmxreg == -1) mmxreg = _getFreeMMXreg();
+	if (mmxreg == -1)
+		mmxreg = _getFreeMMXreg();
 
 	mmxregs[mmxreg].inuse = 1;
 	mmxregs[mmxreg].reg = reg;

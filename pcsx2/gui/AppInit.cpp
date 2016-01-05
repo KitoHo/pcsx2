@@ -18,6 +18,7 @@
 #include "AppAccelerators.h"
 #include "ConsoleLogger.h"
 #include "MSWstuff.h"
+#include "MTVU.h" // for thread cancellation on shutdown
 
 #include "Utilities/IniInterface.h"
 #include "DebugTools/Debug.h"
@@ -345,6 +346,14 @@ bool Pcsx2App::OnCmdLineParsed( wxCmdLineParser& parser )
 		Startup.IsoFile		= parser.GetParam( 0 );
 		Startup.SysAutoRun	= true;
 	}
+	else
+	{
+		wxString elf_file;
+		if (parser.Found(L"elf", &elf_file) && !elf_file.IsEmpty()) {
+			Startup.SysAutoRunElf = true;
+			Startup.ElfFile = elf_file;
+		}
+	}
 	
 	if( parser.Found(L"usecd") )
 	{
@@ -374,7 +383,10 @@ public:
 
 	virtual ~GameDatabaseLoaderThread() throw()
 	{
-		_parent::Cancel();
+		try {
+			_parent::Cancel();
+		}
+		DESTRUCTOR_CATCHALL
 	}
 
 protected:
@@ -410,7 +422,12 @@ bool Pcsx2App::OnInit()
     wxInitAllImageHandlers();
 
 	Console.WriteLn("Applying operating system default language...");
-	i18n_SetLanguage( wxLANGUAGE_DEFAULT );
+	{
+		// The PCSX2 log system hasn't been set up yet, so error messages might
+		// pop up that could cause some alarm amongst users. Let's avoid that.
+		wxDoNotLogInThisScope please;
+		i18n_SetLanguage(wxLANGUAGE_DEFAULT);
+	}
 
 	Console.WriteLn("Command line parsing...");
 	if( !_parent::OnInit() ) return false;
@@ -475,6 +492,15 @@ bool Pcsx2App::OnInit()
 			g_Conf->EmuOptions.UseBOOT2Injection = !Startup.NoFastBoot;
 			SysUpdateIsoSrcFile( Startup.IsoFile );
 			sApp.SysExecute( Startup.CdvdSource );
+		}
+		else if ( Startup.SysAutoRunElf )
+		{
+			g_Conf->EmuOptions.UseBOOT2Injection = true;
+			// Enable iop/ee logging
+			SysConsole.eeConsole.Enabled = true;
+			SysConsole.iopConsole.Enabled = true;
+
+			sApp.SysExecute( Startup.CdvdSource, Startup.ElfFile );
 		}
 	}
 	// ----------------------------------------------------------------------------
@@ -692,10 +718,13 @@ Pcsx2App::Pcsx2App()
 
 	m_PendingSaves			= 0;
 	m_ScheduledTermination	= false;
+	m_UseGUI				= true;
+	m_NoGuiExitPrompt		= true;
 
 	m_id_MainFrame		= wxID_ANY;
 	m_id_GsFrame		= wxID_ANY;
 	m_id_ProgramLogBox	= wxID_ANY;
+	m_id_Disassembler	= wxID_ANY;
 	m_ptr_ProgramLog	= NULL;
 
 	SetAppName( L"PCSX2" );
@@ -704,7 +733,11 @@ Pcsx2App::Pcsx2App()
 
 Pcsx2App::~Pcsx2App()
 {
-	pxDoAssert = pxAssertImpl_LogIt;
+	pxDoAssert = pxAssertImpl_LogIt;	
+	try {
+		vu1Thread.Cancel();
+	}
+	DESTRUCTOR_CATCHALL
 }
 
 void Pcsx2App::CleanUp()

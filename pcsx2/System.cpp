@@ -73,7 +73,21 @@ void* RecompiledCodeReserve::Reserve( size_t size, uptr base, uptr upper_bounds 
 {
 	if (!_parent::Reserve(size, base, upper_bounds)) return NULL;
 	_registerProfiler();
+
+	// Pre-Allocate the first block (to reduce the number of segmentation fault
+	// in debugger)
+	DoCommitAndProtect(0);
+
 	return m_baseptr;
+}
+
+void RecompiledCodeReserve::Reset()
+{
+	_parent::Reset();
+
+	// Pre-Allocate the first block (to reduce the number of segmentation fault
+	// in debugger)
+	DoCommitAndProtect(0);
 }
 
 
@@ -100,7 +114,7 @@ void RecompiledCodeReserve::OnCommittedBlock( void* block )
 		// the assembly dump more cleanly.  We don't clear the block on Release builds since
 		// it can add a noticeable amount of overhead to large block recompilations.
 
-		memset_sse_a<0xcc>( block, m_blocksize * __pagesize );
+		memset(block, 0xCC, m_blocksize * __pagesize);
 	}
 }
 
@@ -253,6 +267,7 @@ void SysLogMachineCaps()
 	if( x86caps.hasStreamingSIMD4Extensions )		features[0].Add( L"SSE4.1" );
 	if( x86caps.hasStreamingSIMD4Extensions2 )		features[0].Add( L"SSE4.2" );
 	if( x86caps.hasAVX )							features[0].Add( L"AVX" );
+	if( x86caps.hasAVX2 )							features[0].Add( L"AVX2" );
 	if( x86caps.hasFMA)								features[0].Add( L"FMA" );
 
 	if( x86caps.hasMultimediaExtensionsExt )		features[1].Add( L"MMX2  " );
@@ -322,8 +337,11 @@ CpuInitializer< CpuType >::CpuInitializer()
 template< typename CpuType >
 CpuInitializer< CpuType >::~CpuInitializer() throw()
 {
-	if (MyCpu)
-		MyCpu->Shutdown();
+	try {
+		if (MyCpu)
+			MyCpu->Shutdown();
+	}
+	DESTRUCTOR_CATCHALL
 }
 
 // --------------------------------------------------------------------------------------
@@ -366,7 +384,10 @@ SysMainMemory::SysMainMemory()
 
 SysMainMemory::~SysMainMemory() throw()
 {
-	ReleaseAll();
+	try {
+		ReleaseAll();
+	}
+	DESTRUCTOR_CATCHALL
 }
 
 void SysMainMemory::ReserveAll()

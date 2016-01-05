@@ -42,8 +42,7 @@
 #include <d3d9.h>
 #include <d3dx9.h>
 #include <comutil.h>
-#include "../../common/include/comptr.h"
-
+#include <atlcomcli.h>
 
 #define D3DCOLORWRITEENABLE_RGBA (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA)
 #define D3D11_SHADER_MACRO D3D10_SHADER_MACRO
@@ -58,12 +57,6 @@
 #define __CL_ENABLE_EXCEPTIONS
 #include <CL/cl.hpp>
 
-#endif
-
-// Require at least Visual Studio 2012
-#if defined(__linux__) || (defined(_MSC_VER) && (_MSC_VER >= 1700))
-#define _CX11_
-#define ENABLE_BOOST // queue is from boost but it doesn't require a full boost install
 #endif
 
 // put these into vc9/common7/ide/usertype.dat to have them highlighted
@@ -81,6 +74,11 @@ typedef uint64 uptr;
 #else
 typedef uint32 uptr;
 #endif
+
+
+// xbyak compatibilities
+typedef int64 sint64;
+#define MIE_INTEGER_TYPE_DEFINED
 
 // stdc
 
@@ -102,14 +100,10 @@ typedef uint32 uptr;
 #include <set>
 #include <queue>
 #include <algorithm>
-#ifdef _CX11_
 #include <thread>
 #include <atomic>
-#endif
-#if defined(__linux__) || defined(_CX11_)
 #include <mutex>
 #include <condition_variable>
-#endif
 
 using namespace std;
 
@@ -124,6 +118,10 @@ using namespace std;
 #include <hash_map>
 #include <hash_set>
 using namespace stdext;
+#endif
+
+#ifdef __linux__
+#include <sys/stat.h> // mkdir
 #endif
 
 #ifdef _WINDOWS
@@ -238,7 +236,13 @@ struct aligned_free_second {template<class T> void operator()(T& p) {_aligned_fr
 
 #define countof(a) (sizeof(a) / sizeof(a[0]))
 
+// GCC removes the variable as dead code and generates some warnings.
+// Stack is automatically realigned due to SSE/AVX operations
+#ifdef __GNUC__
+#define ALIGN_STACK(n) (void)0;
+#else
 #define ALIGN_STACK(n) __aligned(int, n) __dummy;
+#endif
 
 #ifndef RESTRICT
 
@@ -493,7 +497,7 @@ extern void vmfree(void* ptr, size_t size);
 #endif
 
 #define GL_INSERT(type, code, sev, ...) \
-	do if (gl_DebugMessageInsert) gl_DebugMessageInsert(GL_DEBUG_SOURCE_APPLICATION, type, code, sev, -1, format(__VA_ARGS__).c_str()); while(0);
+	do if (glDebugMessageInsert) glDebugMessageInsert(GL_DEBUG_SOURCE_APPLICATION, type, code, sev, -1, format(__VA_ARGS__).c_str()); while(0);
 
 // Except apple any sane driver support this extension
 #if defined(_DEBUG)
@@ -503,8 +507,8 @@ extern void vmfree(void* ptr, size_t size);
 #endif
 
 #if defined(ENABLE_OGL_DEBUG)
-#define GL_PUSH(...)	do if (gl_PushDebugGroup) gl_PushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0xBAD, -1, format(__VA_ARGS__).c_str()); while(0);
-#define GL_POP()        do if (gl_PopDebugGroup) gl_PopDebugGroup(); while(0);
+#define GL_PUSH(...)	do if (glPushDebugGroup) glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0xBAD, -1, format(__VA_ARGS__).c_str()); while(0);
+#define GL_POP()        do if (glPopDebugGroup) glPopDebugGroup(); while(0);
 #define GL_INS(...)		GL_INSERT(GL_DEBUG_TYPE_ERROR, 0xDEAD, GL_DEBUG_SEVERITY_MEDIUM, __VA_ARGS__)
 #define GL_PERF(...)	GL_INSERT(GL_DEBUG_TYPE_PERFORMANCE, 0xFEE1, GL_DEBUG_SEVERITY_NOTIFICATION, __VA_ARGS__)
 #else

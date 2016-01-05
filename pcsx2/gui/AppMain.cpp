@@ -14,6 +14,7 @@
  */
 
 #include "PrecompiledHeader.h"
+#include "App.h"
 #include "MainFrame.h"
 #include "GSFrame.h"
 #include "GS.h"
@@ -58,36 +59,6 @@ DEFINE_EVENT_TYPE( pxEvt_LogicalVsync );
 DEFINE_EVENT_TYPE( pxEvt_ThreadTaskTimeout_SysExec );
 
 ScopedPtr<AppConfig>	g_Conf;
-
-template<typename DialogType>
-int AppOpenModalDialog( wxString panel_name, wxWindow* parent=NULL )
-{
-	if( wxWindow* window = wxFindWindowByName( L"Dialog:" + DialogType::GetNameStatic() ) )
-	{
-		window->SetFocus();
-		if( wxDialog* dialog = wxDynamicCast( window, wxDialog ) )
-		{
-			// Switch to the requested panel.
-			wxCommandEvent evt(pxEvt_SetSettingsPage);
-			evt.SetString(panel_name);
-			dialog->GetEventHandler()->ProcessEvent(evt);
-
-			// It's legal to call ShowModal on a non-modal dialog, therefore making
-			// it modal in nature for the needs of whatever other thread of action wants
-			// to block against it:
-			if( !dialog->IsModal() )
-			{
-				int result = dialog->ShowModal();
-				dialog->Destroy();
-				return result;
-			}
-		}
-		pxFailDev( "Can only show wxDialog class windows as modal!" );
-		return wxID_CANCEL;
-	}
-	else
-		return DialogType( parent ).ShowModal();
-}
 
 static bool HandlePluginError( BaseException& ex )
 {
@@ -323,6 +294,18 @@ void Pcsx2App::PadKeyDispatch( const keyEvent& ev )
 
 	m_kevt.m_keyCode = vkey? vkey : ev.key;
 
+	if (DevConWriterEnabled && m_kevt.GetEventType() == wxEVT_KEY_DOWN) {
+		wxString strFromCode = wxAcceleratorEntry(
+			(m_kevt.m_shiftDown ? wxACCEL_SHIFT : 0) | (m_kevt.m_controlDown ? wxACCEL_CTRL : 0) | (m_kevt.m_altDown ? wxACCEL_ALT : 0),
+			m_kevt.m_keyCode
+			).ToString();
+
+		if (strFromCode.EndsWith(L"\\"))
+			strFromCode += L"\\"; // If copied into PCSX2_keys.ini, \ needs escaping
+
+		Console.WriteLn(wxString(L"> Key: %s (Code: %ld)"),	WX_STR(strFromCode), m_kevt.m_keyCode);
+	}
+
 	if( m_kevt.GetEventType() == wxEVT_KEY_DOWN )
 	{
 		if( GSFrame* gsFrame = wxGetApp().GetGsFramePtr() )
@@ -356,9 +339,6 @@ class pxMessageOutputMessageBox : public wxMessageOutput
 public:
 	pxMessageOutputMessageBox() { }
 
-#if wxMAJOR_VERSION < 3
-	virtual void Printf(const wxChar* format, ...);
-#endif
 	// DoPrintf in wxMessageOutputBase (wxWidgets 3.0) uses this.
 	virtual void Output(const wxString &out);
 };
@@ -369,19 +349,6 @@ public:
 // wxMessageOutputMessageBox::PrintF is only used in like two places, so we can just check for the
 // commandline window using an identifier we know is contained in it, and then format our own window
 // display. :D  --air
-
-#if wxMAJOR_VERSION < 3
-void pxMessageOutputMessageBox::Printf(const wxChar* format, ...)
-{
-	va_list args;
-	va_start(args, format);
-	wxString out;
-	out.PrintfV(format, args);
-	va_end(args);
-
-	Output(out);
-}
-#endif
 
 void pxMessageOutputMessageBox::Output(const wxString& out)
 {
@@ -519,8 +486,6 @@ void FramerateManager::Resume()
 
 void FramerateManager::DoFrame()
 {
-	++m_FrameCounter;
-
 	m_fpsqueue_writepos = (m_fpsqueue_writepos + 1) % FramerateQueueDepth;
 	m_fpsqueue[m_fpsqueue_writepos] = GetCPUTicks();
 
@@ -739,8 +704,15 @@ void Pcsx2App::HandleEvent(wxEvtHandler* handler, wxEventFunction func, wxEvent&
 		// Runtime errors which have been unhandled should still be safe to recover from,
 		// so lets issue a message to the user and then continue the message pump.
 
+		// Test case (Windows only, Linux has an uncaught exception for some
+		// reason): Run PSX ISO using fast boot
+		if (GSFrame* gsframe = wxGetApp().GetGsFramePtr())
+			gsframe->Close();
+
 		Console.Error( ex.FormatDiagnosticMessage() );
-		Msgbox::Alert( ex.FormatDisplayMessage() );
+		// I should probably figure out how to have the error message as well.
+		if (wxGetApp().HasGUI())
+			Msgbox::Alert( ex.FormatDisplayMessage() );
 	}
 }
 
@@ -928,7 +900,7 @@ void Pcsx2App::OpenGsPanel()
 	GSFrame* gsFrame = GetGsFramePtr();
 	if( gsFrame == NULL )
 	{
-		gsFrame = new GSFrame( GetMainFramePtr(), GetAppName() );
+		gsFrame = new GSFrame(GetAppName() );
 		m_id_GsFrame = gsFrame->GetId();
 
 		switch( wxGetApp().Overrides.GsWindowMode )
@@ -985,7 +957,7 @@ void Pcsx2App::OpenGsPanel()
 #if wxMAJOR_VERSION < 3
 	GtkWidget *child_window = gtk_bin_get_child(GTK_BIN(gsFrame->GetViewport()->GetHandle()));
 #else
-	GtkWidget *child_window = (GtkWidget*)GTK_BIN(gsFrame->GetViewport()->GetHandle());
+	GtkWidget *child_window = GTK_WIDGET(gsFrame->GetViewport()->GetHandle());
 #endif
 
 	gtk_widget_realize(child_window); // create the widget to allow to use GDK_WINDOW_* macro
@@ -1085,6 +1057,7 @@ public:
 	SysExecEvent_Execute()
 		: m_UseCDVDsrc(false)
 		, m_UseELFOverride(false)
+		, m_cdvdsrc_type(CDVDsrc_Iso)
 	{
 	}
 

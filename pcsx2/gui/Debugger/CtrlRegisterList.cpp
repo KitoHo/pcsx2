@@ -19,9 +19,10 @@
 
 #include "DebugEvents.h"
 #include "AppConfig.h"
+#include "DisassemblyDialog.h"
 
 BEGIN_EVENT_TABLE(CtrlRegisterList, wxWindow)
-	EVT_PAINT(CtrlRegisterList::paintEvent)
+	EVT_SIZE(CtrlRegisterList::sizeEvent)
 	EVT_LEFT_DOWN(CtrlRegisterList::mouseEvent)
 	EVT_RIGHT_DOWN(CtrlRegisterList::mouseEvent)
 	EVT_RIGHT_UP(CtrlRegisterList::mouseEvent)
@@ -41,12 +42,13 @@ enum DisassemblyMenuIdentifiers
 
 
 CtrlRegisterList::CtrlRegisterList(wxWindow* parent, DebugInterface* _cpu)
-	: wxWindow(parent,wxID_ANY,wxDefaultPosition,wxDefaultSize,wxWANTS_CHARS|wxBORDER_NONE), cpu(_cpu)
+	: wxScrolledWindow(parent,wxID_ANY,wxDefaultPosition,wxDefaultSize,wxWANTS_CHARS|wxBORDER_NONE|wxVSCROLL), cpu(_cpu)
 {
-	rowHeight = g_Conf->EmuOptions.Debugger.FontHeight+2;
-	charWidth = g_Conf->EmuOptions.Debugger.FontWidth;
-	category = 0;
-	maxBits = 128;
+	rowHeight = getDebugFontHeight()+2;
+	charWidth = getDebugFontWidth();
+	category  = 0;
+	maxBits   = 128;
+	lastPc    = 0xFFFFFFFF;
 
 	for (int i = 0; i < cpu->getRegisterCategoryCount(); i++)
 	{
@@ -62,13 +64,42 @@ CtrlRegisterList::CtrlRegisterList(wxWindow* parent, DebugInterface* _cpu)
 			maxLen = std::max<int>(maxLen,strlen(cpu->getRegisterName(i,k)));
 		}
 
-		int x = 17+(maxLen+3)*charWidth;
+		int x = 17+(maxLen+2)*charWidth;
 		startPositions.push_back(x);
 		currentRows.push_back(0);
 	}
 
 	SetDoubleBuffered(true);
 	SetInitialSize(ClientToWindowSize(GetMinClientSize()));
+
+	wxSize actualSize = getOptimalSize();
+	SetVirtualSize(actualSize);
+	SetScrollbars(1, rowHeight, actualSize.x, actualSize.y / rowHeight, 0, 0);
+}
+
+wxSize CtrlRegisterList::getOptimalSize() const
+{
+	int columnChars = 0;
+	int maxWidth = 0;
+	int maxRows = 0;
+
+	for (int i = 0; i < cpu->getRegisterCategoryCount(); i++)
+	{
+		int bits = std::min<u32>(maxBits, cpu->getRegisterSize(i));
+		int start = startPositions[i];
+
+		int w = start + (bits / 4) * charWidth;
+		if (bits > 32)
+			w += (bits / 32) * 2 - 2;
+
+		maxWidth = std::max<int>(maxWidth, w);
+		columnChars += strlen(cpu->getRegisterCategoryName(i)) + 1;
+		maxRows = std::max<int>(maxRows, cpu->getRegisterCount(i));
+	}
+
+	maxWidth = std::max<int>(columnChars*charWidth, maxWidth + 4);
+
+	return wxSize(maxWidth, (maxRows + 1)*rowHeight);
 }
 
 void CtrlRegisterList::postEvent(wxEventType type, wxString text)
@@ -134,16 +165,15 @@ void CtrlRegisterList::refreshChangedRegs()
 	lastPc = cpu->getPC();
 }
 
-void CtrlRegisterList::paintEvent(wxPaintEvent & evt)
-{
-	wxPaintDC dc(this);
-	render(dc);
-}
-
 void CtrlRegisterList::redraw()
 {
-	wxClientDC dc(this);
-	render(dc);
+	Update();
+}
+
+void CtrlRegisterList::sizeEvent(wxSizeEvent& evt)
+{
+	Refresh();
+	evt.Skip();
 }
 
 void drawU32Text(wxDC& dc, u32 value, int x, int y)
@@ -153,7 +183,7 @@ void drawU32Text(wxDC& dc, u32 value, int x, int y)
 	dc.DrawText(wxString(str,wxConvUTF8),x,y);
 }
 
-void CtrlRegisterList::render(wxDC& dc)
+void CtrlRegisterList::OnDraw(wxDC& dc)
 {
 	#ifdef WIN32
 	wxFont font = wxFont(wxSize(charWidth,rowHeight-2),wxFONTFAMILY_DEFAULT,wxFONTSTYLE_NORMAL,wxFONTWEIGHT_NORMAL,false,L"Lucida Console");
@@ -163,47 +193,50 @@ void CtrlRegisterList::render(wxDC& dc)
 	#endif
 	dc.SetFont(font);
 	
-	// clear background
-	wxColor white = wxColor(0xFFFFFFFF);
-
-	dc.SetBrush(wxBrush(white));
-	dc.SetPen(wxPen(white));
-
-	wxSize size = GetSize();
-	dc.DrawRectangle(0,0,size.x,size.y);
-
 	refreshChangedRegs();
 
 	wxColor colorChanged = wxColor(0xFF0000FF);
 	wxColor colorUnchanged = wxColor(0xFF004000);
 	wxColor colorNormal = wxColor(0xFF600000);
 
+	int startRow;
+	GetViewStart(nullptr,&startRow);
+	int endRow = startRow + ceil(float(GetClientSize().y) / rowHeight);
+
 	// draw categories
-	int piece = size.x/cpu->getRegisterCategoryCount();
-	for (int i = 0; i < cpu->getRegisterCategoryCount(); i++)
+	int width = GetClientSize().x;
+	if (startRow == 0)
 	{
-		const char* name = cpu->getRegisterCategoryName(i);
-
-		int x = i*piece;
-
-		if (i == category)
+		int piece = width /cpu->getRegisterCategoryCount();
+		for (int i = 0; i < cpu->getRegisterCategoryCount(); i++)
 		{
-			dc.SetBrush(wxBrush(wxColor(0xFF70FF70)));
-			dc.SetPen(wxPen(wxColor(0xFF000000)));
-		} else {
-			dc.SetBrush(wxBrush(wxColor(0xFFFFEFE8)));
-			dc.SetPen(wxPen(wxColor(0xFF000000)));
-		}
+			const char* name = cpu->getRegisterCategoryName(i);
 
-		if (i == cpu->getRegisterCategoryCount()-1)
-			piece += size.x-piece*cpu->getRegisterCategoryCount()-1;
+			int x = i*piece;
+
+			if (i == category)
+			{
+				dc.SetBrush(wxBrush(wxColor(0xFF70FF70)));
+				dc.SetPen(wxPen(wxColor(0xFF000000)));
+			} else {
+				dc.SetBrush(wxBrush(wxColor(0xFFFFEFE8)));
+				dc.SetPen(wxPen(wxColor(0xFF000000)));
+			}
+
+			if (i == cpu->getRegisterCategoryCount()-1)
+				piece += width-piece*cpu->getRegisterCategoryCount()-1;
 		
-		dc.DrawRectangle(x,0,piece+1,rowHeight);
+			dc.DrawRectangle(x,0,piece+1,rowHeight);
 
-		// center text
-		x += (piece-strlen(name)*charWidth)/2;
-		dc.DrawText(wxString(name,wxConvUTF8),x,2);
+			// center text
+			x += (piece-strlen(name)*charWidth)/2;
+			dc.DrawText(wxString(name,wxConvUTF8),x,2);
+		}
 	}
+
+	// skip the tab row
+	startRow = std::max<int>(0,startRow-1);
+	endRow = std::min<int>(cpu->getRegisterCount(category)-1,endRow-1);
 
 	int nameStart = 17;
 	int valueStart = startPositions[category];
@@ -212,17 +245,22 @@ void CtrlRegisterList::render(wxDC& dc)
 	int registerBits = cpu->getRegisterSize(category);
 	DebugInterface::RegisterType type = cpu->getRegisterType(category);
 
-	for (int i = 0; i < cpu->getRegisterCount(category); i++)
+	for (int i = startRow; i <= endRow; i++)
 	{
 		int x = valueStart;
 		int y = rowHeight*(i+1);
 
+		wxColor backgroundColor;
 		if (currentRows[category] == i)
-		{
-			dc.SetBrush(wxBrush(wxColor(0xFFFFEFE8)));
-			dc.SetPen(wxPen(wxColor(0xFFFFEFE8)));
-			dc.DrawRectangle(0,y,size.x,rowHeight);
-		}
+			backgroundColor = wxColor(0xFFFFCFC8);
+		else if (i % 2)
+			backgroundColor = wxColor(237, 242, 255, 255);
+		else
+			backgroundColor = wxColor(0xFFFFFFFF);
+
+		dc.SetBrush(backgroundColor);
+		dc.SetPen(backgroundColor);
+		dc.DrawRectangle(0, y, width, rowHeight);
 
 		const char* name = cpu->getRegisterName(category,i);
 		dc.SetTextForeground(colorNormal);
@@ -239,7 +277,7 @@ void CtrlRegisterList::render(wxDC& dc)
 			case 128:
 				{
 					int startIndex = std::min<int>(3,maxBits/32-1);
-					int actualX = size.x-4-(startIndex+1)*(8*charWidth+2);
+					int actualX = width-4-(startIndex+1)*(8*charWidth+2);
 					x = std::max<int>(actualX,x);
 
 					if (startIndex != 3)
@@ -341,10 +379,10 @@ void CtrlRegisterList::changeValue(RegisterChangeMode mode)
 			oldValue._u64[0] = newValue;
 			break;
 		case UPPER64:
-			oldValue._u64[1] = newValue; 
+			oldValue._u64[1] = newValue;
 			break;
 		case CHANGE32:
-			oldValue._u32[0] = newValue; 
+			oldValue._u32[0] = newValue;
 			break;
 		}
 
@@ -434,10 +472,16 @@ void CtrlRegisterList::setCurrentRow(int row)
 
 void CtrlRegisterList::mouseEvent(wxMouseEvent& evt)
 {
+	int xOffset, yOffset;
+	((wxScrolledWindow*) this)->GetViewStart(&xOffset, &yOffset);
+
+	wxClientDC dc(this);
+	wxPoint pos = evt.GetPosition();
+	int x = dc.DeviceToLogicalX(pos.x) + xOffset;
+	int y = dc.DeviceToLogicalY(pos.y) + yOffset * rowHeight;
+
 	if (evt.GetEventType() == wxEVT_RIGHT_UP)
 	{
-		int y = evt.GetPosition().y;
-
 		if (y >= rowHeight)
 		{
 			int row = (y-rowHeight)/rowHeight;
@@ -481,9 +525,6 @@ void CtrlRegisterList::mouseEvent(wxMouseEvent& evt)
 
 	if (evt.ButtonIsDown(wxMOUSE_BTN_LEFT) || evt.ButtonIsDown(wxMOUSE_BTN_RIGHT))
 	{
-		int x = evt.GetPosition().x;
-		int y = evt.GetPosition().y;
-
 		if (y < rowHeight)
 		{
 			int piece = GetSize().x/cpu->getRegisterCategoryCount();
@@ -513,7 +554,7 @@ void CtrlRegisterList::keydownEvent(wxKeyEvent& evt)
 		setCurrentRow(std::max<int>(currentRows[category]-1,0));
 		break;
 	case WXK_DOWN:
-		setCurrentRow(std::min<int>(currentRows[category]+1,cpu->getRegisterCount(category)));
+		setCurrentRow(std::min<int>(currentRows[category]+1,cpu->getRegisterCount(category)-1));
 		break;
 	case WXK_TAB:
 		category = (category+1) % cpu->getRegisterCategoryCount();

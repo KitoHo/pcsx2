@@ -173,6 +173,7 @@ static u64 m_iStart=0;
 struct vSyncTimingInfo
 {
 	Fixed100 Framerate;		// frames per second (8 bit fixed)
+	GS_RegionMode RegionMode; // used to detect change (interlaced/progressive)
 	u32 Render;				// time from vblank end to vblank start (cycles)
 	u32 Blank;				// time from vblank start to vblank end (cycles)
 
@@ -186,15 +187,15 @@ struct vSyncTimingInfo
 static vSyncTimingInfo vSyncInfo;
 
 
-static void vSyncInfoCalc( vSyncTimingInfo* info, Fixed100 framesPerSecond, u32 scansPerFrame )
+static void vSyncInfoCalc(vSyncTimingInfo* info, Fixed100 framesPerSecond, u32 scansPerFrame)
 {
 	// I use fixed point math here to have strict control over rounding errors. --air
 
 	// NOTE: mgs3 likes a /4 vsync, but many games prefer /2.  This seems to indicate a
 	// problem in the counters vsync gates somewhere.
 
-	u64 Frame		= ((u64)PS2CLK * 1000000ULL) / (framesPerSecond*100).ToIntRounded();
-	u64 HalfFrame	= Frame / 2;
+	u64 Frame = ((u64)PS2CLK * 1000000ULL) / (framesPerSecond * 100).ToIntRounded();
+	u64 HalfFrame = Frame / 2;
 
 	// One test we have shows that VBlank lasts for ~22 HBlanks, another we have show that is the time it's off.
 	// There exists a game (Legendz Gekitou! Saga Battle) Which runs REALLY slowly if VBlank is ~22 HBlanks, so the other test wins.
@@ -204,38 +205,38 @@ static void vSyncInfoCalc( vSyncTimingInfo* info, Fixed100 framesPerSecond, u32 
 	//I would have suspected this to be Frame - Blank, but that seems to completely freak it out
 	//and the test results are completely wrong. It seems 100% the same as the PS2 test on this,
 	//So let's roll with it :P
-	u64 Render		= HalfFrame - Blank;	// so use the half-frame value for these...
+	u64 Render = HalfFrame - Blank;	// so use the half-frame value for these...
 
 	// Important!  The hRender/hBlank timers should be 50/50 for best results.
 	//  (this appears to be what the real EE's timing crystal does anyway)
 
-	u64 Scanline	= Frame / scansPerFrame;
-	u64 hBlank		= Scanline / 2;
-	u64 hRender		= Scanline - hBlank;
-	
-	if ( gsRegionMode == Region_NTSC_PROGRESSIVE )
+	u64 Scanline = Frame / scansPerFrame;
+	u64 hBlank = Scanline / 2;
+	u64 hRender = Scanline - hBlank;
+
+	if (gsRegionMode == Region_NTSC_PROGRESSIVE)
 	{
 		hBlank /= 2;
 		hRender /= 2;
 	}
 
-	info->Framerate	= framesPerSecond;
-	info->Render	= (u32)(Render/10000);
-	info->Blank		= (u32)(Blank/10000);
+	info->Framerate = framesPerSecond;
+	info->Render = (u32)(Render / 10000);
+	info->Blank = (u32)(Blank / 10000);
 
-	info->hRender	= (u32)(hRender/10000);
-	info->hBlank	= (u32)(hBlank/10000);
+	info->hRender = (u32)(hRender / 10000);
+	info->hBlank = (u32)(hBlank / 10000);
 	info->hScanlinesPerFrame = scansPerFrame;
 
 	// Apply rounding:
-	if( ( Render - info->Render ) >= 5000 ) info->Render++;
-	else if( ( Blank - info->Blank ) >= 5000 ) info->Blank++;
+	if ((Render - info->Render) >= 5000) info->Render++;
+	else if ((Blank - info->Blank) >= 5000) info->Blank++;
 
-	if( ( hRender - info->hRender ) >= 5000 ) info->hRender++;
-	else if( ( hBlank - info->hBlank ) >= 5000 ) info->hBlank++;
+	if ((hRender - info->hRender) >= 5000) info->hRender++;
+	else if ((hBlank - info->hBlank) >= 5000) info->hBlank++;
 
 	// Calculate accumulative hSync rounding error per half-frame:
-	if ( gsRegionMode != Region_NTSC_PROGRESSIVE ) // gets off the chart in that mode
+	if (gsRegionMode != Region_NTSC_PROGRESSIVE) // gets off the chart in that mode
 	{
 		u32 hSyncCycles = ((info->hRender + info->hBlank) * scansPerFrame) / 2;
 		u32 vSyncCycles = (info->Render + info->Blank);
@@ -278,18 +279,19 @@ u32 UpdateVSyncRate()
 	else if ( gsRegionMode == Region_NTSC_PROGRESSIVE )
 	{
 		isCustom = (EmuConfig.GS.FramerateNTSC != 59.94);
-		framerate = 30; // Cheating here to avoid a complex change to the below "vSyncInfo.Framerate != framerate" branch
+		framerate = EmuConfig.GS.FramerateNTSC / 2;
 		scanlines = SCANLINES_TOTAL_NTSC;
 	}
 
-	if( vSyncInfo.Framerate != framerate )
+	if (vSyncInfo.Framerate != framerate || vSyncInfo.RegionMode != gsRegionMode)
 	{
+		vSyncInfo.RegionMode = gsRegionMode;
 		vSyncInfoCalc( &vSyncInfo, framerate, scanlines );
 		Console.WriteLn( Color_Green, "(UpdateVSyncRate) Mode Changed to %s.", ( gsRegionMode == Region_PAL ) ? "PAL" : 
-			( gsRegionMode == Region_NTSC ) ? "NTSC" : "Progressive Scan" );
+			( gsRegionMode == Region_NTSC ) ? "NTSC" : "NTSC Progressive Scan" );
 		
 		if( isCustom )
-			Console.Indent().WriteLn( Color_StrongGreen, "... with user configured refresh rate: %.02f Hz", framerate.ToFloat() );
+			Console.Indent().WriteLn( Color_StrongGreen, "... with user configured refresh rate: %.02f Hz", 2 * framerate.ToFloat() );
 
 		hsyncCounter.CycleT = vSyncInfo.hRender;	// Amount of cycles before the counter will be updated
 		vsyncCounter.CycleT = vSyncInfo.Render;		// Amount of cycles before the counter will be updated
@@ -432,7 +434,9 @@ static __fi void VSyncEnd(u32 sCycle)
 	if (gates) rcntEndGate(true, sCycle); // Counters End Gate Code
 
 	// FolderMemoryCard needs information on how much time has passed since the last write
-	sioNextFrame();
+	// Call it every 60 frames
+	if (!(g_FrameCount % 60))
+		sioNextFrame();
 
 	frameLimit(); // limit FPS
 
@@ -651,7 +655,8 @@ static __fi void rcntStartGate(bool isVblank, u32 sCycle)
 				// Just set the start cycle (sCycleT) -- counting will be done as needed
 				// for events (overflows, targets, mode changes, and the gate off below)
 
-				counters[i].mode.IsCounting = 1;
+				counters[i].count = rcntRcount(i);
+				counters[i].mode.IsCounting = 0;
 				counters[i].sCycleT = sCycle;
 				EECNT_LOG("EE Counter[%d] %s StartGate Type0, count = %x", i,
 					isVblank ? "vblank" : "hblank", counters[i].count );
@@ -696,10 +701,9 @@ static __fi void rcntEndGate(bool isVblank , u32 sCycle)
 				// Set the count here.  Since the timer is being turned off it's
 				// important to record its count at this point (it won't be counted by
 				// calls to rcntUpdate).
-
-				counters[i].count = rcntRcount(i);
-				counters[i].mode.IsCounting = 0;
-				counters[i].sCycleT = sCycle;
+				counters[i].mode.IsCounting = 1;
+				counters[i].sCycleT = cpuRegs.cycle;
+				
 				EECNT_LOG("EE Counter[%d] %s EndGate Type0, count = %x", i,
 					isVblank ? "vblank" : "hblank", counters[i].count );
 			break;

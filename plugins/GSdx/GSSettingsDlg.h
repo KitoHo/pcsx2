@@ -24,7 +24,7 @@
 #include "GSDialog.h"
 #include "GSSetting.h"
 
-class GSShadeBostDlg : public GSDialog
+class GSShaderDlg : public GSDialog
 {
 	int saturation;
 	int brightness;
@@ -37,7 +37,7 @@ protected:
 	bool OnMessage(UINT message, WPARAM wParam, LPARAM lParam);	
 
 public:
-	GSShadeBostDlg();
+	GSShaderDlg();
 };
 
 class GSHacksDlg : public GSDialog
@@ -47,8 +47,6 @@ class GSHacksDlg : public GSDialog
 	std::string adapter_id;
 	
 	bool isdx9;
-
-	HWND hovered_window;
 
 	void UpdateControls();
 
@@ -90,7 +88,7 @@ protected:
 	bool OnCommand(HWND hWnd, UINT id, UINT code);
 
 	// Shade Boost
-	GSShadeBostDlg ShadeBoostDlg;
+	GSShaderDlg ShaderDlg;
 	GSHacksDlg HacksDlg;
 
 public:

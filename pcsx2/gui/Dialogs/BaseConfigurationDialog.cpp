@@ -22,9 +22,6 @@
 #include "ModalPopups.h"
 #include "Panels/ConfigurationPanels.h"
 
-#include "Resources/EmbeddedImage.h"
-#include "Resources/ButtonIcon_Camera.h"
-
 #include <wx/artprov.h>
 #include <wx/filepicker.h>
 #include <wx/listbook.h>
@@ -37,12 +34,9 @@ DEFINE_EVENT_TYPE( pxEvt_SomethingChanged )
 using namespace Panels;
 
 // configure the orientation of the listbox based on the platform
+// For now, they're all on the left.
+static const int s_orient = wxLB_LEFT;
 
-#if defined(__WXMAC__) || defined(__WXMSW__)
-	static const int s_orient = wxBK_TOP;
-#else
-	static const int s_orient = wxBK_LEFT;
-#endif
 
 class ScopedOkButtonDisabler
 {
@@ -135,7 +129,9 @@ void BaseApplicableDialog::OnSettingsApplied( wxCommandEvent& evt )
 Dialogs::BaseConfigurationDialog::BaseConfigurationDialog( wxWindow* parent, const wxString& title, int idealWidth )
 	: _parent( parent, title )
 {
-	SetMinWidth( idealWidth );
+	float scale = MSW_GetDPIScale();
+
+	SetMinWidth( scale * idealWidth );
 	m_listbook = NULL;
 	m_allowApplyActivation = true;
 
@@ -188,7 +184,7 @@ void Dialogs::BaseConfigurationDialog::AddOkCancel( wxSizer* sizer )
 	if( wxWindow* apply = FindWindow( wxID_APPLY ) ) apply->Disable();
 	SomethingChanged_StateModified_IsChanged();
 
-	wxBitmapButton& screenshotButton( *new wxBitmapButton( this, wxID_SAVE, EmbeddedImage<res_ButtonIcon_Camera>().Get() ) );
+	wxBitmapButton& screenshotButton(*new wxBitmapButton(this, wxID_SAVE, wxGetApp().GetScreenshotBitmap()));
 	screenshotButton.SetToolTip( _("Saves a snapshot of this settings panel to a PNG file.") );
 
 	*m_extraButtonSizer += screenshotButton|pxMiddle;
@@ -302,9 +298,8 @@ void Dialogs::BaseConfigurationDialog::OnScreenshot_Click( wxCommandEvent& evt )
 	{
 		ScopedBusyCursor busy( Cursor_ReallyBusy );
 #ifdef __WXMSW__
-		// FIXME: Ideally the alpha channel information should be dealt with
-		// at the window level. This will do until I have a comprehensive fix
-		// ready.
+		// HACK: This works around an actual wx3.0 bug at the cost of icon
+		// quality. See http://trac.wxwidgets.org/ticket/14403 .
 		wxImage image = memBmp.ConvertToImage();
 		if (image.HasAlpha())
 			image.ClearAlpha();
@@ -313,10 +308,4 @@ void Dialogs::BaseConfigurationDialog::OnScreenshot_Click( wxCommandEvent& evt )
 		memBmp.SaveFile( filename, wxBITMAP_TYPE_PNG );
 #endif
 	}
-}
-
-void Dialogs::BaseConfigurationDialog::OnSettingsApplied( wxCommandEvent& evt )
-{
-	evt.Skip();
-	MSW_ListView_SetIconSpacing( m_listbook, GetClientSize().GetWidth() );
 }

@@ -20,6 +20,8 @@
 #include "R5900OpcodeTables.h"
 #include "iR5900.h"
 
+using namespace x86Emitter;
+
 namespace Interp = R5900::Interpreter::OpcodeImpl;
 
 namespace R5900 {
@@ -223,9 +225,9 @@ void recWritebackHILOMMX(int info, int regsource, int writed, int upper)
 			reghi = _checkXMMreg(XMMTYPE_GPRREG, XMMGPR_HI, MODE_READ);
 			if( reghi >= 0 ) {
 				if( xmmregs[reghi].mode & MODE_WRITE ) SSE2_MOVQ_XMM_to_M64(hiaddr-8, reghi);
+				xmmregs[reghi].inuse = 0;
 			}
-
-			xmmregs[reghi].inuse = 0;
+						
 			MOVQRtoM(hiaddr, mmreg);
 		}
 		else {
@@ -258,9 +260,9 @@ void recWritebackConstHILO(u64 res, int writed, int upper)
 			reglo = _allocCheckGPRtoXMM(g_pCurInstInfo, XMMGPR_LO, MODE_WRITE|MODE_READ);
 
 			if( reglo >= 0 ) {
-				u32* ptr = recGetImm64(res & 0x80000000 ? -1 : 0, (u32)res);
-				if( upper ) SSE_MOVHPS_M64_to_XMM(reglo, (uptr)ptr);
-				else SSE_MOVLPS_M64_to_XMM(reglo, (uptr)ptr);
+				u32* mem_ptr = recGetImm64(res & 0x80000000 ? -1 : 0, (u32)res);
+				if( upper ) SSE_MOVHPS_M64_to_XMM(reglo, (uptr)mem_ptr);
+				else SSE_MOVLPS_M64_to_XMM(reglo, (uptr)mem_ptr);
 			}
 			else {
 				MOV32ItoM(loaddr, res & 0xffffffff);
@@ -272,15 +274,15 @@ void recWritebackConstHILO(u64 res, int writed, int upper)
 	if( g_pCurInstInfo->regs[XMMGPR_HI] & testlive ) {
 
 		if( !upper && (reghi = _allocCheckGPRtoMMX(g_pCurInstInfo, XMMGPR_HI, MODE_WRITE)) >= 0 ) {
-			MOVQMtoR(reghi, (uptr)recGetImm64(res >> 63 ? -1 : 0, res >> 32));
+			MOVQMtoR(reghi, (uptr)recGetImm64((res >> 63) ? -1 : 0, res >> 32));
 		}
 		else {
 			reghi = _allocCheckGPRtoXMM(g_pCurInstInfo, XMMGPR_HI, MODE_WRITE|MODE_READ);
 
 			if( reghi >= 0 ) {
-				u32* ptr = recGetImm64(res >> 63 ? -1 : 0, res >> 32);
-				if( upper ) SSE_MOVHPS_M64_to_XMM(reghi, (uptr)ptr);
-				else SSE_MOVLPS_M64_to_XMM(reghi, (uptr)ptr);
+				u32* mem_ptr = recGetImm64((res >> 63) ? -1 : 0, res >> 32);
+				if( upper ) SSE_MOVHPS_M64_to_XMM(reghi, (uptr)mem_ptr);
+				else SSE_MOVLPS_M64_to_XMM(reghi, (uptr)mem_ptr);
 			}
 			else {
 				_deleteEEreg(XMMGPR_HI, 0);

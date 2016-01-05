@@ -2986,9 +2986,9 @@ public:
 	// Code extract:
 	// union { int i; float f; } __tmp;
 
-GSVector.h:2977:40: error: declaration of ‘int GSVector4::extract32() const::<anonymous union>::i’
+GSVector.h:2977:40: error: declaration of 'int GSVector4::extract32() const::<anonymous union>::i'
    return _mm_extract_ps(m, i);
-GSVector.h:2973:15: error:  shadows template parm ‘int i’
+GSVector.h:2973:15: error:  shadows template parm 'int i'
   template<int i> __forceinline int extract32() const
 #endif
 
@@ -5592,7 +5592,7 @@ public:
 	{
 		ASSERT(i < 8);
 
-		return extract<i / 4>().extract32<i & 3>();
+		return extract<i / 4>().template extract32<i & 3>();
 	}
 
 	template<int i> __forceinline GSVector8 insert(__m128 m) const

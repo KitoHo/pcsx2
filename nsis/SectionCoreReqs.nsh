@@ -26,14 +26,9 @@
   ; ------------------------------------------
   ; (Binaries, shared DLLs, null plugins, game database, languages, etc)
 
-  ; Note that v3 pthreads is compatible with v4 pthreads, so we just copy v4 over both
-  ; filenames.  This allows many older plugin versions to continue to work.
-
-    File                                            ..\bin\w32pthreads.v4.dll
-  ; See above comment.
-    File           /oname=w32pthreads.v3.dll        ..\bin\w32pthreads.v4.dll
     File                                            ..\bin\GameIndex.dbf
     File                                            ..\bin\cheats_ws.zip
+	File                                            ..\bin\PCSX2_keys.ini.default
 
 	!insertmacro UNINSTALL.LOG_CLOSE_INSTALL
 
@@ -45,6 +40,11 @@
     SetOutPath "$INSTDIR\Docs"
     !insertmacro UNINSTALL.LOG_OPEN_INSTALL
     File                                            ..\bin\docs\*
+    !insertmacro UNINSTALL.LOG_CLOSE_INSTALL
+	
+	SetOutPath "$INSTDIR\Shaders"
+    !insertmacro UNINSTALL.LOG_OPEN_INSTALL
+    File                                            ..\bin\shaders\*
     !insertmacro UNINSTALL.LOG_CLOSE_INSTALL
     
     SetOutPath "$INSTDIR\Plugins"
