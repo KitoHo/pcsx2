@@ -55,6 +55,7 @@ class GSDevice11 : public GSDeviceDX
 
 	bool m_srv_changed, m_ss_changed;
 	int spritehack;
+	bool isNative;
 
 	struct
 	{
@@ -174,7 +175,7 @@ public:
 
 	void ClearRenderTarget(GSTexture* t, const GSVector4& c);
 	void ClearRenderTarget(GSTexture* t, uint32 c);
-	void ClearDepth(GSTexture* t, float c);
+	void ClearDepth(GSTexture* t);
 	void ClearStencil(GSTexture* t, uint8 c);
 
 	GSTexture* CreateRenderTarget(int w, int h, bool msaa, int format = 0);
@@ -227,10 +228,10 @@ public:
 	operator ID3D11Device*() {return m_dev;}
 	operator ID3D11DeviceContext*() {return m_ctx;}
 
-	void CompileShader(const char* source, size_t size, const char* fn, const char* entry, D3D11_SHADER_MACRO* macro, ID3D11VertexShader** vs, D3D11_INPUT_ELEMENT_DESC* layout, int count, ID3D11InputLayout** il);
-	void CompileShader(const char* source, size_t size, const char* fn, const char* entry, D3D11_SHADER_MACRO* macro, ID3D11GeometryShader** gs);
-	void CompileShader(const char* source, size_t size, const char* fn, const char* entry, D3D11_SHADER_MACRO* macro, ID3D11GeometryShader** gs, D3D11_SO_DECLARATION_ENTRY* layout, int count);
-	void CompileShader(const char* source, size_t size, const char* fn, const char* entry, D3D11_SHADER_MACRO* macro, ID3D11PixelShader** ps);
-	void CompileShader(const char* source, size_t size, const char* fn, const char* entry, D3D11_SHADER_MACRO* macro, ID3D11ComputeShader** cs);
+	void CompileShader(const char* source, size_t size, const char* fn, ID3DInclude *include, const char* entry, D3D_SHADER_MACRO* macro, ID3D11VertexShader** vs, D3D11_INPUT_ELEMENT_DESC* layout, int count, ID3D11InputLayout** il);
+	void CompileShader(const char* source, size_t size, const char* fn, ID3DInclude *include, const char* entry, D3D_SHADER_MACRO* macro, ID3D11GeometryShader** gs);
+	void CompileShader(const char* source, size_t size, const char* fn, ID3DInclude *include, const char* entry, D3D_SHADER_MACRO* macro, ID3D11GeometryShader** gs, D3D11_SO_DECLARATION_ENTRY* layout, int count);
+	void CompileShader(const char* source, size_t size, const char* fn, ID3DInclude *include, const char* entry, D3D_SHADER_MACRO* macro, ID3D11PixelShader** ps);
+	void CompileShader(const char* source, size_t size, const char* fn, ID3DInclude *include, const char* entry, D3D_SHADER_MACRO* macro, ID3D11ComputeShader** cs);
 };
 

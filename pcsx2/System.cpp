@@ -20,13 +20,12 @@
 #include "newVif.h"
 #include "MTVU.h"
 
-#include "SamplProf.h"
-
 #include "Elfheader.h"
 
 #include "System/RecTypes.h"
 
 #include "Utilities/MemsetFast.inl"
+#include "Utilities/Perf.h"
 
 
 // --------------------------------------------------------------------------------------
@@ -42,8 +41,6 @@ RecompiledCodeReserve::RecompiledCodeReserve( const wxString& name, uint defComm
 	m_blocksize		= (1024 * 128) / __pagesize;
 	m_prot_mode		= PageAccess_Any();
 	m_def_commit	= defCommit / __pagesize;
-	
-	m_profiler_registered = false;
 }
 
 RecompiledCodeReserve::~RecompiledCodeReserve() throw()
@@ -54,14 +51,12 @@ RecompiledCodeReserve::~RecompiledCodeReserve() throw()
 void RecompiledCodeReserve::_registerProfiler()
 {
 	if (m_profiler_name.IsEmpty() || !IsOk()) return;
-	ProfilerRegisterSource( m_profiler_name, m_baseptr, GetReserveSizeInBytes() );
-	m_profiler_registered = true;
+
+	Perf::any.map((uptr)m_baseptr, GetReserveSizeInBytes(), m_profiler_name.ToUTF8());
 }
 
 void RecompiledCodeReserve::_termProfiler()
 {
-	if (m_profiler_registered)
-		ProfilerTerminateSource( m_profiler_name );
 }
 
 uint RecompiledCodeReserve::_calcDefaultCommitInBlocks() const
@@ -270,9 +265,6 @@ void SysLogMachineCaps()
 	if( x86caps.hasAVX2 )							features[0].Add( L"AVX2" );
 	if( x86caps.hasFMA)								features[0].Add( L"FMA" );
 
-	if( x86caps.hasMultimediaExtensionsExt )		features[1].Add( L"MMX2  " );
-	if( x86caps.has3DNOWInstructionExtensions )		features[1].Add( L"3DNOW " );
-	if( x86caps.has3DNOWInstructionExtensionsExt )	features[1].Add( L"3DNOW2" );
 	if( x86caps.hasStreamingSIMD4ExtensionsA )		features[1].Add( L"SSE4a " );
 
 	const wxString result[2] =
@@ -290,9 +282,9 @@ template< typename CpuType >
 class CpuInitializer
 {
 public:
-	ScopedPtr<CpuType>			MyCpu;
-	ScopedExcept	ExThrown;
-	
+	std::unique_ptr<CpuType> MyCpu;
+	ScopedExcept ExThrown;
+
 	CpuInitializer();
 	virtual ~CpuInitializer() throw();
 
@@ -301,8 +293,8 @@ public:
 		return !!MyCpu;
 	}
 
-	CpuType* GetPtr() { return MyCpu.GetPtr(); }
-	const CpuType* GetPtr() const { return MyCpu.GetPtr(); }
+	CpuType* GetPtr() { return MyCpu.get(); }
+	const CpuType* GetPtr() const { return MyCpu.get(); }
 
 	operator CpuType*() { return GetPtr(); }
 	operator const CpuType*() const { return GetPtr(); }
@@ -317,20 +309,20 @@ template< typename CpuType >
 CpuInitializer< CpuType >::CpuInitializer()
 {
 	try {
-		MyCpu = new CpuType();
+		MyCpu = std::unique_ptr<CpuType>(new CpuType());
 		MyCpu->Reserve();
 	}
 	catch( Exception::RuntimeError& ex )
 	{
 		Console.Error( L"CPU provider error:\n\t" + ex.FormatDiagnosticMessage() );
-		MyCpu = NULL;
-		ExThrown = ex.Clone();
+		MyCpu = nullptr;
+		ExThrown = ScopedExcept(ex.Clone());
 	}
 	catch( std::runtime_error& ex )
 	{
 		Console.Error( L"CPU provider error (STL Exception)\n\tDetails:" + fromUTF8( ex.what() ) );
-		MyCpu = NULL;
-		ExThrown = new Exception::RuntimeError(ex);
+		MyCpu = nullptr;
+		ExThrown = ScopedExcept(new Exception::RuntimeError(ex));
 	}
 }
 
@@ -400,7 +392,7 @@ void SysMainMemory::ReserveAll()
 	m_ee.Reserve();
 	m_iop.Reserve();
 	m_vu.Reserve();
-	
+
 	reserveNewVif(0);
 	reserveNewVif(1);
 }
@@ -452,7 +444,7 @@ void SysMainMemory::DecommitAll()
 
 	closeNewVif(0);
 	closeNewVif(1);
-	
+
 	vtlb_Core_Free();
 }
 
@@ -484,14 +476,14 @@ SysCpuProviderPack::SysCpuProviderPack()
 	Console.WriteLn( Color_StrongBlue, "Reserving memory for recompilers..." );
 	ConsoleIndentScope indent(1);
 
-	CpuProviders = new CpuInitializerSet();
+	CpuProviders = std::unique_ptr<CpuInitializerSet>(new CpuInitializerSet());
 
 	try {
 		recCpu.Reserve();
 	}
 	catch( Exception::RuntimeError& ex )
 	{
-		m_RecExceptionEE = ex.Clone();
+		m_RecExceptionEE = ScopedExcept(ex.Clone());
 		Console.Error( L"EE Recompiler Reservation Failed:\n" + ex.FormatDiagnosticMessage() );
 		recCpu.Shutdown();
 	}
@@ -501,7 +493,7 @@ SysCpuProviderPack::SysCpuProviderPack()
 	}
 	catch( Exception::RuntimeError& ex )
 	{
-		m_RecExceptionIOP = ex.Clone();
+		m_RecExceptionIOP = ScopedExcept(ex.Clone());
 		Console.Error( L"IOP Recompiler Reservation Failed:\n" + ex.FormatDiagnosticMessage() );
 		psxRec.Shutdown();
 	}
@@ -517,14 +509,14 @@ SysCpuProviderPack::SysCpuProviderPack()
 
 bool SysCpuProviderPack::IsRecAvailable_MicroVU0() const { return CpuProviders->microVU0.IsAvailable(); }
 bool SysCpuProviderPack::IsRecAvailable_MicroVU1() const { return CpuProviders->microVU1.IsAvailable(); }
-BaseException* SysCpuProviderPack::GetException_MicroVU0() const { return CpuProviders->microVU0.ExThrown; }
-BaseException* SysCpuProviderPack::GetException_MicroVU1() const { return CpuProviders->microVU1.ExThrown; }
+BaseException* SysCpuProviderPack::GetException_MicroVU0() const { return CpuProviders->microVU0.ExThrown.get(); }
+BaseException* SysCpuProviderPack::GetException_MicroVU1() const { return CpuProviders->microVU1.ExThrown.get(); }
 
 #ifndef DISABLE_SVU
 bool SysCpuProviderPack::IsRecAvailable_SuperVU0() const { return CpuProviders->superVU0.IsAvailable(); }
 bool SysCpuProviderPack::IsRecAvailable_SuperVU1() const { return CpuProviders->superVU1.IsAvailable(); }
-BaseException* SysCpuProviderPack::GetException_SuperVU0() const { return CpuProviders->superVU0.ExThrown; }
-BaseException* SysCpuProviderPack::GetException_SuperVU1() const { return CpuProviders->superVU1.ExThrown; }
+BaseException* SysCpuProviderPack::GetException_SuperVU0() const { return CpuProviders->superVU0.ExThrown.get(); }
+BaseException* SysCpuProviderPack::GetException_SuperVU1() const { return CpuProviders->superVU1.ExThrown.get(); }
 #endif
 
 
@@ -661,20 +653,26 @@ u8* SysMmapEx(uptr base, u32 size, uptr bounds, const char *caller)
 	return Mem;
 }
 
+wxString SysGetBiosDiscID()
+{
+	// FIXME: we should return a serial based on
+	// the BIOS being run (either a checksum of the BIOS roms, and/or a string based on BIOS
+	// region and revision).
+
+	return wxEmptyString;
+}
+
 // This function always returns a valid DiscID -- using the Sony serial when possible, and
 // falling back on the CRC checksum of the ELF binary if the PS2 software being run is
 // homebrew or some other serial-less item.
 wxString SysGetDiscID()
 {
 	if( !DiscSerial.IsEmpty() ) return DiscSerial;
-	
+
 	if( !ElfCRC )
 	{
-		// FIXME: system is currently running the BIOS, so it should return a serial based on
-		// the BIOS being run (either a checksum of the BIOS roms, and/or a string based on BIOS
-		// region and revision).
-		
-		return wxEmptyString;
+		// system is currently running the BIOS
+		return SysGetBiosDiscID();
 	}
 
 	return pxsFmt( L"%08x", ElfCRC );

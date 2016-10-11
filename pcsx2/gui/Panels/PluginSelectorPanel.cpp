@@ -17,6 +17,7 @@
 
 #include <wx/dynlib.h>
 #include <wx/dir.h>
+#include <memory>
 
 #include "App.h"
 #include "AppSaveStates.h"
@@ -39,15 +40,14 @@ static const bool DisableThreading =
 using namespace pxSizerFlags;
 using namespace Threading;
 
-BEGIN_DECLARE_EVENT_TYPES()
-	DECLARE_EVENT_TYPE(pxEvt_EnumeratedNext, -1)
-	DECLARE_EVENT_TYPE(pxEvt_EnumerationFinished, -1)
-	DECLARE_EVENT_TYPE(pxEVT_ShowStatusBar, -1)
-END_DECLARE_EVENT_TYPES()
 
-DEFINE_EVENT_TYPE(pxEvt_EnumeratedNext);
-DEFINE_EVENT_TYPE(pxEvt_EnumerationFinished);
-DEFINE_EVENT_TYPE(pxEVT_ShowStatusBar);
+wxDECLARE_EVENT(pxEvt_EnumeratedNext, wxCommandEvent);
+wxDECLARE_EVENT(pxEvt_EnumerationFinished, wxCommandEvent);
+wxDECLARE_EVENT(pxEVT_ShowStatusBar, wxCommandEvent);
+
+wxDEFINE_EVENT(pxEvt_EnumeratedNext, wxCommandEvent);
+wxDEFINE_EVENT(pxEvt_EnumerationFinished, wxCommandEvent);
+wxDEFINE_EVENT(pxEVT_ShowStatusBar, wxCommandEvent);
 
 typedef s32		(CALLBACK* TestFnptr)();
 typedef void	(CALLBACK* ConfigureFnptr)();
@@ -98,7 +98,7 @@ public:
 		: m_plugpath( plugpath )
 	{
 		if( !m_plugin.Load( m_plugpath ) )
-			throw Exception::BadStream( m_plugpath ).SetBothMsgs(L"File is not a valid dynamic library.");
+			throw Exception::BadStream();
 
 		wxDoNotLogInThisScope please;
 		m_GetLibType		= (_PS2EgetLibType)m_plugin.GetSymbol( L"PS2EgetLibType" );
@@ -256,7 +256,7 @@ void SysExecEvent_ApplyPlugins::InvokeEvent()
 {
 	ScopedCoreThreadPause paused_core;
 
-	ScopedPtr< VmStateBuffer > buffer;
+	std::unique_ptr<VmStateBuffer> buffer;
 	
 	if( SysHasValidState() )
 	{
@@ -268,7 +268,8 @@ void SysExecEvent_ApplyPlugins::InvokeEvent()
 		// FIXME : We only actually have to save plugins here, except the recovery code
 		// in SysCoreThread isn't quite set up yet to handle that (I think...) --air
 
-		memSavingState saveme( *(buffer.Reassign(new VmStateBuffer(L"StateBuffer_ApplyNewPlugins"))) );
+		buffer.reset(new VmStateBuffer(L"StateBuffer_ApplyNewPlugins"));
+		memSavingState saveme(buffer.get());
 		
 		saveme.FreezeAll();
 	}
@@ -428,14 +429,14 @@ Panels::PluginSelectorPanel::PluginSelectorPanel( wxWindow* parent )
 	// refresh button used for diagnostics... (don't think there's a point to having one otherwise) --air
 	//wxButton* refresh = new wxButton( this, wxID_ANY, L"Refresh" );
 	//s_main.Add( refresh );
-	//Connect( refresh->GetId(), wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler( PluginSelectorPanel::OnRefresh ) );
+	//Bind(wxEVT_BUTTON, &PluginSelectorPanel::OnRefresh, this, refresh->GetId());
 
-	Connect( pxEvt_EnumeratedNext,				wxCommandEventHandler( PluginSelectorPanel::OnProgress ) );
-	Connect( pxEvt_EnumerationFinished,			wxCommandEventHandler( PluginSelectorPanel::OnEnumComplete ) );
-	Connect( pxEVT_ShowStatusBar,				wxCommandEventHandler( PluginSelectorPanel::OnShowStatusBar ) );
-	Connect( wxEVT_COMMAND_COMBOBOX_SELECTED,	wxCommandEventHandler( PluginSelectorPanel::OnPluginSelected ) );
+	Bind(pxEvt_EnumeratedNext, &PluginSelectorPanel::OnProgress, this);
+	Bind(pxEvt_EnumerationFinished, &PluginSelectorPanel::OnEnumComplete, this);
+	Bind(pxEVT_ShowStatusBar, &PluginSelectorPanel::OnShowStatusBar, this);
+	Bind(wxEVT_COMBOBOX, &PluginSelectorPanel::OnPluginSelected, this);
 
-	Connect( ButtonId_Configure, wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler( PluginSelectorPanel::OnConfigure_Clicked ) );
+	Bind(wxEVT_BUTTON, &PluginSelectorPanel::OnConfigure_Clicked, this, ButtonId_Configure);
 }
 
 Panels::PluginSelectorPanel::~PluginSelectorPanel() throw()
@@ -546,7 +547,7 @@ void Panels::PluginSelectorPanel::DoRefresh()
 	wxCommandEvent evt( pxEVT_ShowStatusBar );
 	GetEventHandler()->AddPendingEvent( evt );
 
-	m_EnumeratorThread.Reassign(new EnumThread( *this ));
+	m_EnumeratorThread.reset(new EnumThread(*this));
 
 	if( DisableThreading )
 		m_EnumeratorThread->DoNextPlugin( 0 );
@@ -563,11 +564,11 @@ bool Panels::PluginSelectorPanel::ValidateEnumerationStatus()
 	// re-enumerate plugins, and if anything changed then we need to wipe
 	// the contents of the combo boxes and re-enumerate everything.
 
-	// Impl Note: ScopedPtr used so that resources get cleaned up if an exception
+	// Impl Note: unique_ptr used so that resources get cleaned up if an exception
 	// occurs during file enumeration.
-	ScopedPtr<wxArrayString> pluginlist( new wxArrayString() );
+	std::unique_ptr<wxArrayString> pluginlist(new wxArrayString());
 
-	int pluggers = EnumeratePluginsInFolder( m_ComponentBoxes->GetPluginsPath(), pluginlist );
+	int pluggers = EnumeratePluginsInFolder(m_ComponentBoxes->GetPluginsPath(), pluginlist.get());
 
 	if( !m_FileList || (*pluginlist != *m_FileList) )
 		validated = false;
@@ -578,7 +579,7 @@ bool Panels::PluginSelectorPanel::ValidateEnumerationStatus()
 		return validated;
 	}
 
-	m_FileList.SwapPtr( pluginlist );
+	m_FileList.swap(pluginlist);
 
 	// set the gague length a little shorter than the plugin count.  2 reasons:
 	//  * some of the plugins might be duds.
@@ -699,7 +700,7 @@ void Panels::PluginSelectorPanel::OnProgress( wxCommandEvent& evt )
 
 	// The thread can get canceled and replaced with a new thread, which means all
 	// pending messages should be ignored.
-	if( m_EnumeratorThread != (EnumThread*)evt.GetClientData() ) return;
+	if (m_EnumeratorThread.get() != (EnumThread*)evt.GetClientData()) return;
 
 	const size_t evtidx = evt.GetExtraLong();
 
@@ -720,11 +721,6 @@ void Panels::PluginSelectorPanel::OnProgress( wxCommandEvent& evt )
 	);
 
 	EnumeratedPluginInfo& result( m_EnumeratorThread->Results[evtidx] );
-
-	if( result.TypeMask == 0 )
-	{
-		Console.Error( L"Some kinda plugin failure: " + (*m_FileList)[evtidx] );
-	}
 
 	const PluginInfo* pi = tbl_PluginInfo; do
 	{
@@ -785,9 +781,14 @@ void Panels::PluginSelectorPanel::EnumThread::DoNextPlugin( int curidx )
 			}
 		} while( ++pi, pi->shortname != NULL );
 	}
-	catch( Exception::BadStream& ex )
+	catch (Exception::NotEnumerablePlugin& ex)
 	{
-		Console.Warning( ex.FormatDiagnosticMessage() );
+		Console.Warning(ex.FormatDiagnosticMessage());
+	}
+	// wx3.0 provides an error message if the library fails to load - we don't
+	// need to provide one ourselves
+	catch (Exception::BadStream&)
+	{
 	}
 
 	wxCommandEvent yay( pxEvt_EnumeratedNext );

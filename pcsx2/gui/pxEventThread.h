@@ -17,7 +17,7 @@
 
 #include "Utilities/PersistentThread.h"
 #include "Utilities/pxEvents.h"
-
+#include <memory>
 
 // TODO!!  Make the system defined in this header system a bit more generic, and then move
 // it to the Utilities library.
@@ -204,11 +204,13 @@ protected:
 	Threading::MutexRecursive	m_mtx_pending;
 	Threading::Semaphore		m_wakeup;
 	wxThreadIdType				m_OwnerThreadId;
-	volatile u32				m_Quitting;
+	std::atomic<bool>			m_Quitting;
 
 	// Used for performance measuring the execution of individual events,
 	// and also for detecting deadlocks during message processing.
-	volatile u64				m_qpc_Start;
+	// Clang-3.7 failed to link (maybe 64 bits atomic isn't supported on 32 bits)
+	// std::atomic<unsigned long long>				m_qpc_Start;
+	u64				m_qpc_Start;
 
 public:
 	pxEvtQueue();
@@ -266,8 +268,8 @@ class ExecutorThread : public Threading::pxThread
 	typedef Threading::pxThread _parent;
 
 protected:
-	ScopedPtr<wxTimer>		m_ExecutorTimer;
-	ScopedPtr<pxEvtQueue>	m_EvtHandler;
+	std::unique_ptr<wxTimer> m_ExecutorTimer;
+	std::unique_ptr<pxEvtQueue> m_EvtHandler;
 
 public:
 	ExecutorThread( pxEvtQueue* evtandler = NULL );

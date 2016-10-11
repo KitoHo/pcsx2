@@ -217,14 +217,23 @@ struct GSRegSIGBLID
 #define GSIMR		((u32&)*(PS2MEM_GS+0x1010))
 #define GSSIGLBLID	((GSRegSIGBLID&)*(PS2MEM_GS+0x1080))
 
-enum GS_RegionMode
+enum class GS_VideoMode : int
 {
-	Region_NTSC,
-	Region_PAL,
-	Region_NTSC_PROGRESSIVE
+	Uninitialized,
+	Unknown,
+	NTSC,
+	PAL,
+	VESA,
+	HDTV_480P,
+	HDTV_576P,
+	HDTV_720P,
+	HDTV_1080I,
+	HDTV_1080P,
+	BIOS
 };
 
-extern GS_RegionMode gsRegionMode;
+extern GS_VideoMode gsVideoMode;
+extern bool gsIsInterlaced;
 
 /////////////////////////////////////////////////////////////////////////////
 // MTGS Threaded Class Declaration
@@ -267,15 +276,16 @@ class SysMtgsThread : public SysThreadBase
 
 public:
 	// note: when m_ReadPos == m_WritePos, the fifo is empty
-	__aligned(4) uint m_ReadPos;	// cur pos gs is reading from
-	__aligned(4) uint m_WritePos;	// cur pos ee thread is writing to
+	// Threading info: m_ReadPos is updated by the MTGS thread. m_WritePos is updated by the EE thread
+	std::atomic<unsigned int> m_ReadPos;  // cur pos gs is reading from
+	std::atomic<unsigned int> m_WritePos; // cur pos ee thread is writing to
 
-	volatile bool	m_RingBufferIsBusy;
-	volatile u32	m_SignalRingEnable;
-	volatile s32	m_SignalRingPosition;
+	std::atomic<bool>	m_RingBufferIsBusy;
+	std::atomic<bool>	m_SignalRingEnable;
+	std::atomic<int>	m_SignalRingPosition;
 
-	volatile s32	m_QueuedFrameCount;
-	volatile u32	m_VsyncSignalListener;
+	std::atomic<int>	m_QueuedFrameCount;
+	std::atomic<bool>	m_VsyncSignalListener;
 
 	Mutex			m_mtx_RingBufferBusy;  // Is obtained while processing ring-buffer data
 	Mutex			m_mtx_RingBufferBusy2; // This one gets released on semaXGkick waiting...
@@ -291,8 +301,8 @@ public:
 	// has more than one command in it when the thread is kicked.
 	int				m_CopyDataTally;
 
-	Semaphore		m_sem_OpenDone;
-	volatile bool	m_PluginOpened;
+	Semaphore			m_sem_OpenDone;
+	std::atomic<bool>	m_PluginOpened;
 
 	// These vars maintain instance data for sending Data Packets.
 	// Only one data packet can be constructed and uploaded at a time.
@@ -363,7 +373,7 @@ extern s32 gsOpen();
 extern void gsClose();
 extern void gsReset();
 extern void gsOnModeChanged( Fixed100 framerate, u32 newTickrate );
-extern void gsSetRegionMode( GS_RegionMode isPal );
+extern void gsSetVideoMode( GS_VideoMode mode );
 extern void gsResetFrameSkip();
 extern void gsPostVsyncStart();
 extern void gsFrameSkip();

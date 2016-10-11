@@ -44,7 +44,7 @@ class GSRendererCS : public GSRenderer
 		VSSelector() : key(0) {}
 	};
 
-	__aligned(struct, 32) VSConstantBuffer
+	struct alignas(32) VSConstantBuffer
 	{
 		GSVector4 VertexScale;
 		GSVector4 VertexOffset;
@@ -86,7 +86,7 @@ class GSRendererCS : public GSRenderer
 		PSSelector() : key(0) {}
 	};
 
-	__aligned(struct, 32) PSConstantBuffer
+	struct alignas(32) PSConstantBuffer
 	{
 		uint32 fm;
 		uint32 zm;
@@ -134,7 +134,7 @@ protected:
 	bool CreateDevice(GSDevice* dev);
 	void ResetDevice();
 	void VSync(int field);
-	GSTexture* GetOutput(int i);
+	GSTexture* GetOutput(int i, int& y_offset);
 	void Draw();
 	void InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r);
 	void InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r, bool clut);

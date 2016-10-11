@@ -33,14 +33,13 @@
 
 namespace x86Emitter {
 
-void xImpl_JmpCall::operator()( const xRegister32& absreg ) const	{ xOpWrite( 0x00, 0xff, isJmp ? 4 : 2, absreg ); }
-void xImpl_JmpCall::operator()( const xIndirect32& src ) const			{ xOpWrite( 0x00, 0xff, isJmp ? 4 : 2, src ); }
-
-void xImpl_JmpCall::operator()( const xRegister16& absreg ) const	{ xOpWrite( 0x66, 0xff, isJmp ? 4 : 2, absreg ); }
-void xImpl_JmpCall::operator()( const xIndirect16& src ) const			{ xOpWrite( 0x66, 0xff, isJmp ? 4 : 2, src ); }
+void xImpl_JmpCall::operator()( const xRegisterInt& absreg ) const	{ xOpWrite( 0, 0xff, isJmp ? 4 : 2, absreg ); }
+void xImpl_JmpCall::operator()( const xIndirect64orLess& src ) const			{ xOpWrite( 0, 0xff, isJmp ? 4 : 2, src ); }
 
 const xImpl_JmpCall xJMP	= { true };
 const xImpl_JmpCall xCALL	= { false };
+
+const xImpl_FastCall xFastCall = { };
 
 void xSmartJump::SetTarget()
 {
@@ -128,8 +127,10 @@ __emitinline void xJccKnownTarget( JccComparisonType comparison, const void* tar
 		s32* bah = xJcc32( comparison );
 		sptr distance = (sptr)target - (sptr)xGetPtr();
 
+#ifdef __x86_64__
 		// This assert won't physically happen on x86 targets
 		pxAssertDev(distance >= -0x80000000LL && distance < 0x80000000LL, "Jump target is too far away, needs an indirect register");
+#endif
 
 		*bah = (s32)distance;
 	}

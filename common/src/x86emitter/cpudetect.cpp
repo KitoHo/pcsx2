@@ -16,13 +16,31 @@
 #include "PrecompiledHeader.h"
 #include "cpudetect_internal.h"
 #include "internal.h"
+#include "x86_intrin.h"
 
 using namespace x86Emitter;
 
 __aligned16 x86capabilities x86caps;
 
-// Recompiled code buffer for SSE and MXCSR feature testing.
-static __pagealigned u8 targetFXSAVE[512];
+x86capabilities::x86capabilities() :
+	isIdentified(false),
+	VendorID(x86Vendor_Unknown),
+	FamilyID(0),
+	Model(0),
+	TypeID(0),
+	StepID(0),
+	Flags(0),
+	Flags2(0),
+	EFlags(0),
+	EFlags2(0),
+	SEFlag(0),
+	AllCapabilities(0),
+	PhysicalCores(0),
+	LogicalCores(0)
+{
+	memzero(VendorName);
+	memzero(FamilyName);
+}
 
 // Warning!  We've had problems with the MXCSR detection code causing stack corruption in
 // MSVC PGO builds.  The problem was fixed when I moved the MXCSR code to this function, and
@@ -44,10 +62,13 @@ void x86capabilities::SIMD_EstablishMXCSRmask()
 		MXCSR_Mask.bitmask = 0xFFFF;	// SSE2 features added
 	}
 
+	__aligned16 u8 targetFXSAVE[512];
+
 	// Work for recent enough GCC/CLANG/MSVC 2012
 	_fxsave(&targetFXSAVE);
 
-	u32 result = (u32&)targetFXSAVE[28];			// bytes 28->32 are the MXCSR_Mask.
+	u32 result;
+	memcpy(&result, &targetFXSAVE[28], 4); // bytes 28->32 are the MXCSR_Mask.
 	if( result != 0 )
 		MXCSR_Mask.bitmask = result;
 }
@@ -128,7 +149,7 @@ void x86capabilities::CountCores()
 	s32 regs[ 4 ];
 	u32 cmds;
 
-	__cpuid( regs, 0x80000000 );
+	cpuid( regs, 0x80000000 );
 	cmds = regs[ 0 ];
 
 	// detect multicore for AMD cpu
@@ -146,7 +167,7 @@ void x86capabilities::CountCores()
 	CountLogicalCores();
 }
 
-static const char* tbl_x86vendors[] = 
+static const char* tbl_x86vendors[] =
 {
 	"GenuineIntel",
 	"AuthenticAMD",
@@ -170,27 +191,28 @@ void x86capabilities::Identify()
 #endif
 
 	memzero( VendorName );
-	__cpuid( regs, 0 );
+	cpuid( regs, 0 );
 
 	cmds = regs[ 0 ];
-	((u32*)VendorName)[ 0 ] = regs[ 1 ];
-	((u32*)VendorName)[ 1 ] = regs[ 3 ];
-	((u32*)VendorName)[ 2 ] = regs[ 2 ];
+	memcpy(&VendorName[0], &regs[1], 4);
+	memcpy(&VendorName[4], &regs[3], 4);
+	memcpy(&VendorName[8], &regs[2], 4);
 
 	// Determine Vendor Specifics!
 	// It's really not recommended that we base much (if anything) on CPU vendor names,
 	// however it's currently necessary in order to gain a (pseudo)reliable count of cores
 	// and threads used by the CPU (AMD and Intel can't agree on how to make this info available).
 
-	int& vid = (int&)VendorID;
+	int vid;
 	for( vid=0; vid<x86Vendor_Unknown; ++vid )
 	{
 		if( memcmp( VendorName, tbl_x86vendors[vid], 12 ) == 0 ) break;
 	}
+	VendorID = static_cast<x86VendorType>(vid);
 
 	if ( cmds >= 0x00000001 )
 	{
-		__cpuid( regs, 0x00000001 );
+		cpuid( regs, 0x00000001 );
 
 		StepID		=  regs[ 0 ]        & 0xf;
 		Model		= (regs[ 0 ] >>  4) & 0xf;
@@ -206,16 +228,16 @@ void x86capabilities::Identify()
 	if ( cmds >= 0x00000007 )
 	{
 		// Note: ECX must be 0 for AVX2 detection.
-		__cpuidex( regs, 0x00000007, 0 );
+		cpuidex( regs, 0x00000007, 0 );
 
 		SEFlag = regs[ 1 ];
 	}
 
-	__cpuid( regs, 0x80000000 );
+	cpuid( regs, 0x80000000 );
 	cmds = regs[ 0 ];
 	if ( cmds >= 0x80000001 )
 	{
-		__cpuid( regs, 0x80000001 );
+		cpuid( regs, 0x80000001 );
 
 #ifdef __x86_64__
 		x86_64_12BITBRANDID = regs[1] & 0xfff;
@@ -225,9 +247,9 @@ void x86capabilities::Identify()
 	}
 
 	memzero( FamilyName );
-	__cpuid( (int*)FamilyName,		0x80000002);
-	__cpuid( (int*)(FamilyName+16),	0x80000003);
-	__cpuid( (int*)(FamilyName+32),	0x80000004);
+	cpuid( (int*)FamilyName,		0x80000002);
+	cpuid( (int*)(FamilyName+16),	0x80000003);
+	cpuid( (int*)(FamilyName+32),	0x80000004);
 
 	hasFloatingPointUnit						= ( Flags >>  0 ) & 1;
 	hasVirtual8086ModeEnhancements				= ( Flags >>  1 ) & 1;
@@ -250,7 +272,6 @@ void x86capabilities::Identify()
 	hasCFLUSHInstruction						= ( Flags >> 19 ) & 1;
 	hasDebugStore								= ( Flags >> 21 ) & 1;
 	hasACPIThermalMonitorAndClockControl		= ( Flags >> 22 ) & 1;
-	hasMultimediaExtensions						= ( Flags >> 23 ) & 1; //mmx
 	hasFastStreamingSIMDExtensionsSaveRestore	= ( Flags >> 24 ) & 1;
 	hasStreamingSIMDExtensions					= ( Flags >> 25 ) & 1; //sse
 	hasStreamingSIMD2Extensions					= ( Flags >> 26 ) & 1; //sse2
@@ -267,7 +288,7 @@ void x86capabilities::Identify()
 	hasSupplementalStreamingSIMD3Extensions		= ( Flags2 >> 9 ) & 1; //ssse3
 	hasStreamingSIMD4Extensions					= ( Flags2 >> 19 ) & 1; //sse4.1
 	hasStreamingSIMD4Extensions2				= ( Flags2 >> 20 ) & 1; //sse4.2
-	
+
 	if((Flags2 >> 27) & 1) // OSXSAVE
 	{
 		if((_xgetbv(0) & 6) == 6) // XFEATURE_ENABLED_MASK[2:1] = '11b' (XMM state and YMM state are enabled by OS).
@@ -278,11 +299,11 @@ void x86capabilities::Identify()
 		}
 	}
 
+	hasBMI1 = ( SEFlag >>  3 ) & 1;
+	hasBMI2 = ( SEFlag >>  8 ) & 1;
+
 	// Ones only for AMDs:
-	hasMultimediaExtensionsExt					= ( EFlags >> 22 ) & 1; //mmx2
 	hasAMD64BitArchitecture						= ( EFlags >> 29 ) & 1; //64bit cpu
-	has3DNOWInstructionExtensionsExt			= ( EFlags >> 30 ) & 1; //3dnow+
-	has3DNOWInstructionExtensions				= ( EFlags >> 31 ) & 1; //3dnow
 	hasStreamingSIMD4ExtensionsA				= ( EFlags2 >> 6 ) & 1; //INSERTQ / EXTRQ / MOVNT
 
 	isIdentified = true;

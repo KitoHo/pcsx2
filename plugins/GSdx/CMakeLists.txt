@@ -6,28 +6,21 @@ if(NOT TOP_CMAKE_WAS_SOURCED)
 endif()
 
 
-# plugin name
-set(Output GSdx-1.0.0)
+# plugin name (no version number to ease future version bump and bisect)
+set(Output GSdx)
 
 set(CommonFlags
     -fno-operator-names # because Xbyak uses and()/xor()/or()/not() function
-    -mfpmath=sse
-    -fno-strict-aliasing
     -Wno-unknown-pragmas
     -Wno-parentheses
     -Wunused-variable # __dummy variable need to be investigated
     )
 
-if(CMAKE_BUILD_TYPE STREQUAL Debug)
-    set(GSdxFinalFlags ${GSdxFinalFlags} ${CommonFlags} -D_DEBUG)
-
-elseif(CMAKE_BUILD_TYPE STREQUAL Devel)
-    set(GSdxFinalFlags ${GSdxFinalFlags} ${CommonFlags} -D_DEVEL)
-
-elseif(CMAKE_BUILD_TYPE STREQUAL Release)
-    set(GSdxFinalFlags ${GSdxFinalFlags} ${CommonFlags} -W)
-
+if(USE_ICC)
+	set(CommonFlags "${CommonFlags} -restrict")
 endif()
+
+set(GSdxFinalFlags ${CommonFlags})
 
 if(XDG_STD)
     set(GSdxFinalFlags ${GSdxFinalFlags} -DXDG_STD)
@@ -41,10 +34,6 @@ if(LIBLZMA_FOUND)
 	set(GSdxFinalFlags ${GSdxFinalFlags} -DLZMA_SUPPORTED)
 endif()
 
-if(PNGPP_FOUND)
-    set(GSdxFinalFlags ${GSdxFinalFlags} -DPNGPP_SUPPORTED)
-endif()
-
 #Clang doesn't support a few common flags that GCC does.
 if(NOT USE_CLANG)
     set(GSdxFinalFlags ${GSdxFinalFlags} -fabi-version=6)
@@ -53,14 +42,14 @@ endif()
 set(GSdxSources
     GLLoader.cpp
     GLState.cpp
-    GPU.cpp
-    GPUDrawScanline.cpp
-    GPUDrawScanlineCodeGenerator.cpp
-    GPULocalMemory.cpp
-    GPURenderer.cpp
-    GPURendererSW.cpp
-    GPUSetupPrimCodeGenerator.cpp
-    GPUState.cpp
+    PSX/GPU.cpp
+    PSX/GPUDrawScanline.cpp
+    PSX/GPUDrawScanlineCodeGenerator.cpp
+    PSX/GPULocalMemory.cpp
+    PSX/GPURenderer.cpp
+    PSX/GPURendererSW.cpp
+    PSX/GPUSetupPrimCodeGenerator.cpp
+    PSX/GPUState.cpp
     GS.cpp
     GSAlignedClass.cpp
     GSBlock.cpp
@@ -83,9 +72,10 @@ set(GSdxSources
     GSDrawScanlineCodeGenerator.x64.avx.cpp
     GSDump.cpp
     GSFunctionMap.cpp
+    GSHwHack.cpp
     GSLinuxDialog.cpp
     GSLocalMemory.cpp
-	GSLzma.cpp
+    GSLzma.cpp
     GSPerfMon.cpp
     GSPng.cpp
     GSRasterizer.cpp
@@ -109,7 +99,6 @@ set(GSdxSources
     GSTextureCache.cpp
     GSTextureCacheSW.cpp
     GSTextureCacheOGL.cpp
-    GSTextureFXOGL.cpp
     GSTextureOGL.cpp
     GSTextureNull.cpp
     GSTextureSW.cpp
@@ -125,17 +114,17 @@ set(GSdxSources
     )
 
 set(GSdxHeaders
-    GPU.h
-    GPUDrawScanline.h
-    GPUDrawScanlineCodeGenerator.h
-    GPUDrawingEnvironment.h
-    GPULocalMemory.h
-    GPURenderer.h
-    GPURendererSW.h
-    GPUScanlineEnvironment.h
-    GPUSetupPrimCodeGenerator.h
-    GPUState.h
-    GPUVertex.h
+    PSX/GPU.h
+    PSX/GPUDrawScanline.h
+    PSX/GPUDrawScanlineCodeGenerator.h
+    PSX/GPUDrawingEnvironment.h
+    PSX/GPULocalMemory.h
+    PSX/GPURenderer.h
+    PSX/GPURendererSW.h
+    PSX/GPUScanlineEnvironment.h
+    PSX/GPUSetupPrimCodeGenerator.h
+    PSX/GPUState.h
+    PSX/GPUVertex.h
     GS.h
     GSAlignedClass.h
     GSBlock.h
@@ -199,13 +188,10 @@ set(GSdxFinalSources
 
 set(GSdxFinalLibs
     ${X11_LIBRARIES}
-)
-
-set(GSdxFinalLibs ${GSdxFinalLibs}
     ${OPENGL_LIBRARIES}
     ${GTK2_LIBRARIES}
     ${LIBC_LIBRARIES}
-    ${PNG_LIBRARY}
+    ${PNG_LIBRARIES}
 )
 
 if(EGL_API AND EGL_FOUND)
@@ -225,7 +211,11 @@ if (REBUILD_SHADER)
     add_custom_command(OUTPUT res/glsl_source.h COMMAND perl ${CMAKE_SOURCE_DIR}/linux_various/glsl2h.pl)
 endif()
 
-add_pcsx2_plugin(${Output} "${GSdxFinalSources}" "${GSdxFinalLibs}" "${GSdxFinalFlags}")
+if(BUILTIN_GS)
+    add_pcsx2_lib(${Output} "${GSdxFinalSources}" "${GSdxFinalLibs}" "${GSdxFinalFlags}")
+else()
+    add_pcsx2_plugin(${Output} "${GSdxFinalSources}" "${GSdxFinalLibs}" "${GSdxFinalFlags}")
+endif()
 
 ################################### Replay Loader
 if(BUILD_REPLAY_LOADERS)

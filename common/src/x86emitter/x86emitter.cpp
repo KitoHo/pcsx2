@@ -110,13 +110,21 @@ const xRegisterSSE
 	xmm0( 0 ), xmm1( 1 ),
 	xmm2( 2 ), xmm3( 3 ),
 	xmm4( 4 ), xmm5( 5 ),
-	xmm6( 6 ), xmm7( 7 );
+	xmm6( 6 ), xmm7( 7 ),
+	xmm8( 8 ), xmm9( 9 ),
+	xmm10( 10 ), xmm11( 11 ),
+	xmm12( 12 ), xmm13( 13 ),
+	xmm14( 14 ), xmm15( 15 );
 
-const xRegisterMMX
-	mm0( 0 ), mm1( 1 ),
-	mm2( 2 ), mm3( 3 ),
-	mm4( 4 ), mm5( 5 ),
-	mm6( 6 ), mm7( 7 );
+const xAddressReg
+	rax( 0 ), rbx( 3 ),
+	rcx( 1 ), rdx( 2 ),
+	rsp( 4 ), rbp( 5 ),
+	rsi( 6 ), rdi( 7 ),
+	r8( 8 ) , r9( 9 ) ,
+	r10( 10 ), r11( 11 ),
+	r12( 12 ), r13( 13 ),
+	r14( 14 ), r15( 15 );
 
 const xAddressReg
 	eax( 0 ), ebx( 3 ),
@@ -138,34 +146,44 @@ const xRegister8
 
 const xRegisterCL cl;
 
-const char *const x86_regnames_gpr8[8] =
+const char *const x86_regnames_gpr8[] =
 {
 	"al", "cl", "dl", "bl",
-	"ah", "ch", "dh", "bh"
+	"ah", "ch", "dh", "bh",
+	"b8",  "b9",  "b10", "b11",
+	"b12", "b13", "b14", "b15"
 };
 
-const char *const x86_regnames_gpr16[8] =
+const char *const x86_regnames_gpr16[] =
 {
 	"ax", "cx", "dx", "bx",
-	"sp", "bp", "si", "di"
+	"sp", "bp", "si", "di",
+	"h8",  "h9",  "h10", "h11",
+	"h12", "h13", "h14", "h15"
 };
 
-const char *const x86_regnames_gpr32[8] =
+const char *const x86_regnames_gpr32[] =
 {
 	"eax", "ecx", "edx", "ebx",
-	"esp", "ebp", "esi", "edi"
+	"esp", "ebp", "esi", "edi",
+	"e8",  "e9",  "e10", "e11",
+	"e12", "e13", "e14", "e15"
 };
 
-const char *const x86_regnames_sse[8] =
+const char *const x86_regnames_gpr64[] =
+{
+	"rax", "rcx", "rdx", "rbx",
+	"rsp", "rbp", "rsi", "rdi",
+	"r8" , "r9" , "r10", "r11",
+	"r12", "r13", "r14", "r15"
+};
+
+const char *const x86_regnames_sse[] =
 {
 	"xmm0", "xmm1", "xmm2", "xmm3",
-	"xmm4", "xmm5", "xmm6", "xmm7"
-};
-
-const char *const x86_regnames_mmx[8] =
-{
-	"mm0", "mm1", "mm2", "mm3",
-	"mm4", "mm5", "mm6", "mm7"
+	"xmm4", "xmm5", "xmm6", "xmm7",
+	"xmm8", "xmm9", "xmm10", "xmm11",
+	"xmm12", "xmm13", "xmm14", "xmm15"
 };
 
 const char* xRegisterBase::GetName()
@@ -175,14 +193,16 @@ const char* xRegisterBase::GetName()
 
 	// bad error?  Return a "big" error string.  Might break formatting of register tables
 	// but that's the least of your worries if you see this baby.
-	if( Id >= 8 || Id <= -3 ) return "!Register index out of range!";
+	if( Id >= (int)iREGCNT_GPR || Id < 0 ) return "!Register index out of range!";
 
 	switch( GetOperandSize() )
 	{
 		case 1: return x86_regnames_gpr8[ Id ];
 		case 2: return x86_regnames_gpr16[ Id ];
 		case 4: return x86_regnames_gpr32[ Id ];
-		case 8: return x86_regnames_mmx[ Id ];
+#ifdef __x86_64__
+		case 8: return x86_regnames_gpr64[ Id ];
+#endif
 		case 16: return x86_regnames_sse[ Id ];
 	}
 
@@ -231,38 +251,12 @@ void EmitSibMagic( uint regfield, const void* address )
 	// We must make sure that the displacement is within the 32bit range
 	// Else we will fail out in a spectacular fashion
 	sptr displacement = (sptr)address;
+#ifdef __x86_64__
 	pxAssertDev(displacement >= -0x80000000LL && displacement < 0x80000000LL, "SIB target is too far away, needs an indirect register");
+#endif
 
 	xWrite<s32>( (s32)displacement );
 }
-
-//////////////////////////////////////////////////////////////////////////////////////////
-// emitter helpers for xmm instruction with prefixes, most of which are using
-// the basic opcode format (items inside braces denote optional or conditional
-// emission):
-//
-//   [Prefix] / 0x0f / [OpcodePrefix] / Opcode / ModRM+[SibSB]
-//
-// Prefixes are typically 0x66, 0xf2, or 0xf3.  OpcodePrefixes are either 0x38 or
-// 0x3a [and other value will result in assertion failue].
-//
-__emitinline void xOpWrite0F( u8 prefix, u16 opcode, int instId, const xIndirectVoid& sib )
-{
-	SimdPrefix( prefix, opcode );
-	EmitSibMagic( instId, sib );
-}
-
-__emitinline void xOpWrite0F( u8 prefix, u16 opcode, int instId, const void* data )
-{
-	SimdPrefix( prefix, opcode );
-	EmitSibMagic( instId, data );
-}
-
-__emitinline void xOpWrite0F( u16 opcode, int instId, const xIndirectVoid& sib )
-{
-	xOpWrite0F( 0, opcode, instId, sib );
-}
-
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // returns TRUE if this instruction requires SIB to be encoded, or FALSE if the
@@ -291,8 +285,9 @@ static __fi bool NeedsSibMagic( const xIndirectVoid& info )
 //
 void EmitSibMagic( uint regfield, const xIndirectVoid& info )
 {
+	// 3 bits also on x86_64 (so max is 8)
+	// We might need to mask it on x86_64
 	pxAssertDev( regfield < 8, "Invalid x86 register identifier." );
-
 	int displacement_size = (info.Displacement == 0) ? 0 :
 		( ( info.IsByteSizeDisp() ) ? 1 : 2 );
 
@@ -373,6 +368,73 @@ void EmitSibMagic( const xRegisterBase& reg1, const xIndirectVoid& sib )
 {
 	EmitSibMagic( reg1.Id, sib );
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////
+__emitinline static void EmitRex(bool w, bool r, bool x, bool b)
+{
+#ifdef __x86_64__
+	u8 rex = 0x40 | (w << 3) | (r << 2) | (x << 1) | b;
+	if (rex != 0x40)
+		xWrite8(rex);
+#endif
+}
+
+void EmitRex( uint regfield, const void* address )
+{
+	pxAssert(0);
+	bool w = false;
+	bool r = false;
+	bool x = false;
+	bool b = false;
+	EmitRex(w, r, x, b);
+}
+
+void EmitRex( uint regfield, const xIndirectVoid& info )
+{
+	bool w = info.Base.IsWide();
+	bool r = false;
+	bool x = false;
+	bool b = info.IsExtended();
+	EmitRex(w, r, x, b);
+}
+
+void EmitRex( uint reg1, const xRegisterBase& reg2 )
+{
+	bool w = reg2.IsWide();
+	bool r = false;
+	bool x = false;
+	bool b = reg2.IsExtended();
+	EmitRex(w, r, x, b);
+}
+
+void EmitRex( const xRegisterBase& reg1, const xRegisterBase& reg2 )
+{
+	bool w = reg1.IsWide();
+	bool r = reg1.IsExtended();
+	bool x = false;
+	bool b = reg2.IsExtended();
+	EmitRex(w, r, x, b);
+}
+
+void EmitRex( const xRegisterBase& reg1, const void* src )
+{
+	pxAssert(0); //see fixme
+	bool w = reg1.IsWide();
+	bool r = reg1.IsExtended();
+	bool x = false;
+	bool b = false; // FIXME src.IsExtended();
+	EmitRex(w, r, x, b);
+}
+
+void EmitRex( const xRegisterBase& reg1, const xIndirectVoid& sib )
+{
+	bool w = reg1.IsWide();
+	bool r = reg1.IsExtended();
+	bool x = sib.Index.IsExtended();
+	bool b = sib.Base.IsExtended();
+	EmitRex(w, r, x, b);
+}
+
 
 // --------------------------------------------------------------------------------------
 //  xSetPtr / xAlignPtr / xGetPtr / xAdvancePtr
@@ -471,7 +533,7 @@ xAddressVoid xAddressReg::operator-( const void* right ) const
 	return xAddressVoid( *this, -(sptr)right );
 }
 
-xAddressVoid xAddressReg::operator*( u32 factor ) const
+xAddressVoid xAddressReg::operator*( int factor ) const
 {
 	pxAssertMsg( Id != -1, "Uninitialized x86 register." );
 	return xAddressVoid( xEmptyReg, *this, factor );
@@ -499,7 +561,7 @@ xAddressVoid::xAddressVoid( const xAddressReg& base, const xAddressReg& index, i
 	pxAssertMsg( index.Id != xRegId_Invalid, "Uninitialized x86 register." );
 }
 
-xAddressVoid::xAddressVoid( const xAddressReg& index, int displacement )
+xAddressVoid::xAddressVoid( const xAddressReg& index, s32 displacement )
 {
 	Base         = xEmptyReg;
 	Index        = index;
@@ -522,7 +584,12 @@ xAddressVoid::xAddressVoid( const void* displacement )
 	Base         = xEmptyReg;
 	Index        = xEmptyReg;
 	Factor       = 0;
-	Displacement = (sptr)displacement;
+#ifdef __x86_64__
+	pxAssert(0);
+	//Displacement = (s32)displacement;
+#else
+	Displacement = (s32)displacement;
+#endif
 }
 
 xAddressVoid& xAddressVoid::Add( const xAddressReg& src )
@@ -684,7 +751,7 @@ void xIndirectVoid::Reduce()
 			Base = Index;
 			Scale = 3;
 		break;
-		
+
 		jNO_DEFAULT
 	}
 }
@@ -824,11 +891,15 @@ static void EmitLeaMagic( const xRegisterInt& to, const xIndirectVoid& src, bool
 	}
 }
 
-__emitinline void xLEA( xRegister32 to, const xIndirectVoid& src, bool preserve_flags )
+__emitinline void xLEA( xRegister64 to, const xIndirectVoid& src, bool preserve_flags )
 {
 	EmitLeaMagic( to, src, preserve_flags );
 }
 
+__emitinline void xLEA( xRegister32 to, const xIndirectVoid& src, bool preserve_flags )
+{
+	EmitLeaMagic( to, src, preserve_flags );
+}
 
 __emitinline void xLEA( xRegister16 to, const xIndirectVoid& src, bool preserve_flags )
 {
@@ -839,97 +910,83 @@ __emitinline void xLEA( xRegister16 to, const xIndirectVoid& src, bool preserve_
 // =====================================================================================================
 //  TEST / INC / DEC
 // =====================================================================================================
-void xImpl_Test::operator()( const xRegister8& to, const xRegister8& from ) const
+void xImpl_Test::operator()( const xRegisterInt& to, const xRegisterInt& from ) const
 {
-	xWrite8( 0x84 );
-	EmitSibMagic( from, to );
+	pxAssert( to.GetOperandSize() == from.GetOperandSize() );
+	xOpWrite( to.GetPrefix16(), to.Is8BitOp() ? 0x84 : 0x85, from, to );
 }
 
-void xImpl_Test::operator()( const xRegister16& to, const xRegister16& from ) const
+void xImpl_Test::operator()( const xIndirect64orLess& dest, int imm ) const
 {
-	to.prefix16();
-	xWrite8( 0x85 );
-	EmitSibMagic( from, to );
-}
-
-void xImpl_Test::operator()( const xRegister32& to, const xRegister32& from ) const
-{
-	xWrite8( 0x85 );
-	EmitSibMagic( from, to );
-}
-
-void xImpl_Test::operator()( const xIndirect32orLess& dest, int imm ) const
-{
-	dest.prefix16();
-	xWrite8( dest.Is8BitOp() ? 0xf6 : 0xf7 );
-	EmitSibMagic( 0, dest );
+	xOpWrite( dest.GetPrefix16(), dest.Is8BitOp() ? 0xf6 : 0xf7, 0, dest );
 	dest.xWriteImm( imm );
 }
 
 void xImpl_Test::operator()( const xRegisterInt& to, int imm ) const
 {
-	to.prefix16();
-
-	if( to.IsAccumulator() )
-		xWrite8( to.Is8BitOp() ? 0xa8 : 0xa9 );
-	else
-	{
-		xWrite8( to.Is8BitOp() ? 0xf6 : 0xf7 );
-		EmitSibMagic( 0, to );
+	if( to.IsAccumulator() ) {
+		xOpAccWrite( to.GetPrefix16(), to.Is8BitOp() ? 0xa8 : 0xa9, 0, to );
+	} else {
+		xOpWrite( to.GetPrefix16(), to.Is8BitOp() ? 0xf6 : 0xf7, 0, to );
 	}
 	to.xWriteImm( imm );
 }
 
-void xImpl_BitScan::operator()( const xRegister32& to, const xRegister32& from ) const		{ xOpWrite0F( Opcode, to, from ); }
-void xImpl_BitScan::operator()( const xRegister16& to, const xRegister16& from ) const		{ xOpWrite0F( 0x66, Opcode, to, from ); }
-void xImpl_BitScan::operator()( const xRegister16or32& to, const xIndirectVoid& sibsrc ) const
+void xImpl_BitScan::operator()( const xRegister16or32or64& to, const xRegister16or32or64& from ) const {
+	pxAssert( to->GetOperandSize() == from->GetOperandSize() );
+	xOpWrite0F( from->GetPrefix16(), Opcode, to, from );
+}
+void xImpl_BitScan::operator()( const xRegister16or32or64& to, const xIndirectVoid& sibsrc ) const
 {
-	xOpWrite0F( (to->GetOperandSize() == 2) ? 0x66 : 0x00, Opcode, to, sibsrc );
+	xOpWrite0F( to->GetPrefix16(), Opcode, to, sibsrc );
 }
 
 void xImpl_IncDec::operator()( const xRegisterInt& to ) const
 {
 	if( to.Is8BitOp() )
 	{
-		xWrite8( 0xfe );
-		EmitSibMagic( isDec ? 1 : 0, to );
+		u8 regfield = isDec ? 1 : 0;
+		xOpWrite( to.GetPrefix16(), 0xfe, regfield, to);
 	}
 	else
 	{
+#ifdef __x86_64__
+		pxAssertMsg(0, "Single Byte INC/DEC aren't valid in 64 bits."
+				"You need to use the ModR/M form (FF/0 FF/1 opcodes)");
+#endif
 		to.prefix16();
 		xWrite8( (isDec ? 0x48 : 0x40) | to.Id );
 	}
 }
 
-void xImpl_IncDec::operator()( const xIndirect32orLess& to ) const
+void xImpl_IncDec::operator()( const xIndirect64orLess& to ) const
 {
 	to.prefix16();
 	xWrite8( to.Is8BitOp() ? 0xfe : 0xff );
 	EmitSibMagic( isDec ? 1 : 0, to );
 }
 
-void xImpl_DwordShift::operator()( const xRegister32& to,	const xRegister32& from, const xRegisterCL& /* clreg */ ) const	{ xOpWrite0F( OpcodeBase+1, to, from ); }
-void xImpl_DwordShift::operator()( const xRegister16& to,	const xRegister16& from, const xRegisterCL& /* clreg */ ) const	{ xOpWrite0F( 0x66, OpcodeBase+1, to, from ); }
-void xImpl_DwordShift::operator()( const xRegister32& to,	const xRegister32& from, u8 shiftcnt ) const
-{
-	if( shiftcnt != 0 )
-		xOpWrite0F( OpcodeBase, to, from, shiftcnt );
-}
-void xImpl_DwordShift::operator()( const xRegister16& to,	const xRegister16& from, u8 shiftcnt ) const
-{
-	if( shiftcnt != 0 )
-		xOpWrite0F( 0x66, OpcodeBase, to, from, shiftcnt );
+void xImpl_DwordShift::operator()( const xRegister16or32or64& to,	const xRegister16or32or64& from, const xRegisterCL& /* clreg */ ) const	{
+	pxAssert( to->GetOperandSize() == from->GetOperandSize() );
+	xOpWrite0F( from->GetPrefix16(), OpcodeBase+1, to, from );
 }
 
-void xImpl_DwordShift::operator()( const xIndirectVoid& dest, const xRegister16or32& from, const xRegisterCL& /* clreg */ ) const
+void xImpl_DwordShift::operator()( const xRegister16or32or64& to,	const xRegister16or32or64& from, u8 shiftcnt ) const
 {
-	xOpWrite0F( (from->GetOperandSize() == 2) ? 0x66 : 0x00, OpcodeBase + 1, from, dest );
+	pxAssert( to->GetOperandSize() == from->GetOperandSize() );
+	if( shiftcnt != 0 )
+		xOpWrite0F( from->GetPrefix16(), OpcodeBase, to, from, shiftcnt );
 }
 
-void xImpl_DwordShift::operator()( const xIndirectVoid& dest, const xRegister16or32& from, u8 shiftcnt ) const
+void xImpl_DwordShift::operator()( const xIndirectVoid& dest, const xRegister16or32or64& from, const xRegisterCL& /* clreg */ ) const
+{
+	xOpWrite0F( from->GetPrefix16(), OpcodeBase + 1, from, dest );
+}
+
+void xImpl_DwordShift::operator()( const xIndirectVoid& dest, const xRegister16or32or64& from, u8 shiftcnt ) const
 {
 	if( shiftcnt != 0 )
-		xOpWrite0F( (from->GetOperandSize() == 2) ? 0x66 : 0x00, OpcodeBase, from, dest, shiftcnt );
+		xOpWrite0F( from->GetPrefix16(), OpcodeBase, from, dest, shiftcnt );
 }
 
 const xImpl_Test		xTEST	= { };
@@ -961,10 +1018,10 @@ __emitinline void xPUSH( const xIndirectVoid& from )
 	EmitSibMagic( 6, from );
 }
 
-__fi void xPOP( xRegister32 from )		{ xWrite8( 0x58 | from.Id ); }
+__fi void xPOP( xRegister32or64 from )		{ xWrite8( 0x58 | from->Id ); }
 
 __fi void xPUSH( u32 imm )				{ xWrite8( 0x68 ); xWrite32( imm ); }
-__fi void xPUSH( xRegister32 from )	{ xWrite8( 0x50 | from.Id ); }
+__fi void xPUSH( xRegister32or64 from )	{ xWrite8( 0x50 | from->Id ); }
 
 // pushes the EFLAGS register onto the stack
 __fi void xPUSHFD()					{ xWrite8( 0x9C ); }
@@ -1004,10 +1061,10 @@ __fi void xINT( u8 imm )
 
 __fi void xINTO()	{ xWrite8(0xce); }
 
-__emitinline void xBSWAP( const xRegister32& to )
+__emitinline void xBSWAP( const xRegister32or64& to )
 {
 	xWrite8( 0x0F );
-	xWrite8( 0xC8 | to.Id );
+	xWrite8( 0xC8 | to->Id );
 }
 
 static __aligned16 u64 xmm_data[iREGCNT_XMM*2];
@@ -1023,122 +1080,98 @@ __emitinline void xRestoreReg( const xRegisterSSE& dest )
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// Helper function to handle the various functions ABI
-
-__emitinline void xFastCall(void *func, const xRegister32& a1, const xRegister32& a2)
-{
-#ifdef __x86_64__
-	// NEW ABI
-	pxAssert(0);
-#else
-	if (!a1.IsEmpty())
-		xMOV(ecx, a1);
-
-	if (!a2.IsEmpty())
-		xMOV(edx, a2);
-
-	xCALL(func);
-#endif
-}
-
-__emitinline void xFastCall(void *func, const xRegisterSSE& a1, const xRegisterSSE& a2)
-{
-#ifdef __x86_64__
-	// NEW ABI
-	pxAssert(0);
-#else
-	xMOVD(ecx, a1);
-	xMOVD(edx, a2);
-
-	xCALL(func);
-#endif
-}
-
-__emitinline void xFastCall(void *func, u32 a1, u32 a2)
-{
-#ifdef __x86_64__
-	// NEW ABI
-	pxAssert(0);
-#else
-	xMOV(ecx, a1);
-	xMOV(edx, a2);
-
-	xCALL(func);
-#endif
-}
-
-__emitinline void xFastCall(void *func, u32 a1)
-{
-#ifdef __x86_64__
-	// NEW ABI
-	pxAssert(0);
-#else
-	xMOV(ecx, a1);
-
-	xCALL(func);
-#endif
-}
-
-__emitinline void xStdCall(void *func, u32 a1)
-{
-#ifdef __x86_64__
-	// NEW ABI
-	pxAssert(0);
-#else
-	// GCC note: unlike C call, GCC doesn't requires
-	// strict 16B alignment on std call
-	xPUSH(a1);
-	xCALL(func);
-#endif
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////
 // Helper object to handle ABI frame
+#ifdef __GNUC__
 
-xScopedStackFrame::xScopedStackFrame(bool base_frame)
+#ifdef __x86_64__
+// GCC ensures/requires stack to be 16 bytes aligned (but when?)
+#define ALIGN_STACK(v) xADD(rsp, v)
+#else
+// GCC ensures/requires stack to be 16 bytes aligned before the call
+// Call will store 4 bytes. EDI/ESI/EBX will take another 12 bytes.
+// EBP will take 4 bytes if m_base_frame is enabled
+#define ALIGN_STACK(v) xADD(esp, v)
+#endif
+
+#else
+
+#define ALIGN_STACK(v)
+
+#endif
+
+xScopedStackFrame::xScopedStackFrame(bool base_frame, bool save_base_pointer, int offset)
 {
 	m_base_frame = base_frame;
+	m_save_base_pointer = save_base_pointer;
+	m_offset = offset;
 
 #ifdef __x86_64__
-	// NEW ABI
-	pxAssert(0);
+
+	m_offset += 8; // Call stores the return address (4 bytes)
+
+	// Note rbp can surely be optimized in 64 bits
+	if (m_base_frame) {
+		xPUSH( rbp );
+		xMOV( rbp, rsp );
+		m_offset += 8;
+	} else if (m_save_base_pointer) {
+		xPUSH( rbp );
+		m_offset += 8;
+	}
+
+	xPUSH( rbx );
+	xPUSH( r12 );
+	xPUSH( r13 );
+	xPUSH( r14 );
+	xPUSH( r15 );
+	m_offset += 40;
+
 #else
+
+	m_offset += 4; // Call stores the return address (4 bytes)
 
 	// Create a new frame
 	if (m_base_frame) {
 		xPUSH( ebp );
 		xMOV( ebp, esp );
+		m_offset += 4;
+	} else if (m_save_base_pointer) {
+		xPUSH( ebp );
+		m_offset += 4;
 	}
 
 	// Save the register context
 	xPUSH( edi );
 	xPUSH( esi );
 	xPUSH( ebx );
-
-#ifdef __GNUC__
-	// Realign the stack to 16 byte
-	if (m_base_frame) {
-		xSUB( esp, 12);
-	}
-#endif
+	m_offset += 12;
 
 #endif
+
+	ALIGN_STACK(-(16 - m_offset % 16));
 }
 
 xScopedStackFrame::~xScopedStackFrame()
 {
-#ifdef __x86_64__
-	// NEW ABI
-	pxAssert(0);
-#else
+	ALIGN_STACK(16 - m_offset % 16);
 
-#ifdef __GNUC__
-	// Restore the stack (due to the above alignment)
-	// Potentially it can be restored from ebp
+#ifdef __x86_64__
+
+	// Restore the register context
+	xPOP( r15 );
+	xPOP( r14 );
+	xPOP( r13 );
+	xPOP( r12 );
+	xPOP( rbx );
+
+	// Destroy the frame
 	if (m_base_frame) {
-		xADD( esp, 12);
+		xLEAVE();
+	} else if (m_save_base_pointer) {
+		xPOP( rbp );
 	}
-#endif
+
+#else
 
 	// Restore the register context
 	xPOP( ebx );
@@ -1148,6 +1181,8 @@ xScopedStackFrame::~xScopedStackFrame()
 	// Destroy the frame
 	if (m_base_frame) {
 		xLEAVE();
+	} else if (m_save_base_pointer) {
+		xPOP( ebp );
 	}
 
 #endif

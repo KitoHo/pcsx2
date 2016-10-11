@@ -199,7 +199,7 @@ public:
 
 	void ClearRenderTarget(GSTexture* t, const GSVector4& c);
 	void ClearRenderTarget(GSTexture* t, uint32 c);
-	void ClearDepth(GSTexture* t, float c);
+	void ClearDepth(GSTexture* t);
 	void ClearStencil(GSTexture* t, uint8 c);
 
 	GSTexture* CreateRenderTarget(int w, int h, bool msaa, int format = 0);
@@ -237,8 +237,8 @@ public:
 	IDirect3DDevice9* operator->() {return m_dev;}
 	operator IDirect3DDevice9*() {return m_dev;}
 
-	void CompileShader(const char *source, size_t size, const string& entry, const D3DXMACRO* macro, IDirect3DVertexShader9** vs, const D3DVERTEXELEMENT9* layout, int count, IDirect3DVertexDeclaration9** il);
-	void CompileShader(const char *source, size_t size, const string& entry, const D3DXMACRO* macro, IDirect3DPixelShader9** ps);
+	void CompileShader(const char *source, size_t size, const char *filename, const string& entry, const D3D_SHADER_MACRO* macro, IDirect3DVertexShader9** vs, const D3DVERTEXELEMENT9* layout, int count, IDirect3DVertexDeclaration9** il);
+	void CompileShader(const char *source, size_t size, const char *filename, const string& entry, const D3D_SHADER_MACRO* macro, IDirect3DPixelShader9** ps);
 
 	void SetupVS(VSSelector sel, const VSConstantBuffer* cb);
 	void SetupGS(GSSelector sel) {}

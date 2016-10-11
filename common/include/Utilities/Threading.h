@@ -19,8 +19,11 @@
 #include <errno.h> // EBUSY
 #include <pthread.h>
 
+#ifdef __APPLE__
+#include <mach/semaphore.h>
+#endif
+
 #include "Pcsx2Defs.h"
-#include "ScopedPtr.h"
 #include "TraceLog.h"
 
 #undef Yield		// release the burden of windows.h global namespace spam.
@@ -66,11 +69,7 @@ extern ConsoleLogSource_Threading pxConLog_Thread;
 //#define PCSX2_THREAD_LOCAL 0		// uncomment this line to force-disable native TLS (useful for testing TlsVariable on windows/linux)
 
 #ifndef PCSX2_THREAD_LOCAL
-#	ifdef __WXMAC__
-#		define PCSX2_THREAD_LOCAL 0
-#	else
-#		define PCSX2_THREAD_LOCAL 1
-#	endif
+#	define PCSX2_THREAD_LOCAL 1
 #endif
 
 class wxTimeSpan;
@@ -159,9 +158,6 @@ namespace Threading
 
 	// For use in spin/wait loops.
 	extern void SpinWait();
-	
-	// Use prior to committing data to another thread
-	extern void StoreFence();
 
 	// Optional implementation to enable hires thread/process scheduler for the operating system.
 	// Needed by Windows, but might not be relevant to other platforms.
@@ -170,34 +166,6 @@ namespace Threading
 
 	// sleeps the current thread for the given number of milliseconds.
 	extern void Sleep( int ms );
-
-// --------------------------------------------------------------------------------------
-//  AtomicExchange / AtomicIncrement
-// --------------------------------------------------------------------------------------
-// Our fundamental interlocking functions.  All other useful interlocks can be derived
-// from these little beasties!  (these are all implemented internally using cross-platform
-// implementations of _InterlockedExchange and such)
-
-	extern u32 AtomicRead( volatile u32& Target );
-	extern s32 AtomicRead( volatile s32& Target );
-	extern u32 AtomicExchange( volatile u32& Target, u32 value );
-	extern s32 AtomicExchange( volatile s32& Target, s32 value );
-	extern u32 AtomicExchangeAdd( volatile u32& Target, u32 value );
-	extern s32 AtomicExchangeAdd( volatile s32& Target, s32 value );
-	extern s32 AtomicExchangeSub( volatile s32& Target, s32 value );
-	extern u32 AtomicIncrement( volatile u32& Target );
-	extern s32 AtomicIncrement( volatile s32& Target );
-	extern u32 AtomicDecrement( volatile u32& Target );
-	extern s32 AtomicDecrement( volatile s32& Target );
-
-	extern bool AtomicBitTestAndReset( volatile u32& bitset, u8 bit );
-	extern bool AtomicBitTestAndReset( volatile s32& bitset, u8 bit );
-
-	extern void* _AtomicExchangePointer( volatile uptr& target, uptr value );
-	extern void* _AtomicCompareExchangePointer( volatile uptr& target, uptr value, uptr comparand );
-
-#define AtomicExchangePointer( dest, src )				_AtomicExchangePointer( (uptr&)dest, (uptr)src )
-#define AtomicCompareExchangePointer( dest, comp, src )	_AtomicExchangePointer( (uptr&)dest, (uptr)comp, (uptr)src )
 
 	// pthread Cond is an evil api that is not suited for Pcsx2 needs.
 	// Let's not use it. Use mutexes and semaphores instead to create waits. (Air)
@@ -229,30 +197,36 @@ namespace Threading
 	class NonblockingMutex
 	{
 	protected:
-		volatile int val;
+		std::atomic_flag val;
 
 	public:
-		NonblockingMutex() : val( false ) {}
+		NonblockingMutex() { val.clear(); }
 		virtual ~NonblockingMutex() throw() {}
 
 		bool TryAcquire() throw()
 		{
-			return !AtomicExchange( val, true );
+			return !val.test_and_set();
 		}
 
+		// Can be done with a TryAcquire/Release but it is likely better to do it outside of the object
 		bool IsLocked()
-		{ return !!val; }
+		{ pxAssertMsg(0, "IsLocked isn't supported for NonblockingMutex"); return false; }
 
 		void Release()
 		{
-			AtomicExchange( val, false );
+			val.clear();
 		}
 	};
 
 	class Semaphore
 	{
 	protected:
+#ifdef __APPLE__
+		semaphore_t m_sema;
+		int m_counter;
+#else
 		sem_t m_sema;
+#endif
 
 	public:
 		Semaphore();
@@ -320,7 +294,7 @@ namespace Threading
 	// will be automatically released on any return or exit from the function.
 	//
 	// Const qualification note:
-	//  ScopedLock takes const instances of the mutex, even though the mutex is modified 
+	//  ScopedLock takes const instances of the mutex, even though the mutex is modified
 	//  by locking and unlocking.  Two rationales:
 	//
 	//  1) when designing classes with accessors (GetString, GetValue, etc) that need mutexes,
@@ -403,28 +377,24 @@ namespace Threading
 // Note that the isLockedBool should only be used as an indicator for the locked status,
 // and not actually depended on for thread synchronization...
 
-	struct ScopedLockBool {	
+	struct ScopedLockBool {
 		ScopedLock m_lock;
-		volatile __aligned(4) bool& m_bool;
+		std::atomic<bool>& m_bool;
 
-#ifdef __linux__
-		ScopedLockBool(Mutex& mutexToLock, volatile bool& isLockedBool)
-#else
-		ScopedLockBool(Mutex& mutexToLock, volatile __aligned(4) bool& isLockedBool)
-#endif
+		ScopedLockBool(Mutex& mutexToLock, std::atomic<bool>& isLockedBool)
 			: m_lock(mutexToLock),
 			  m_bool(isLockedBool) {
-			m_bool = m_lock.IsLocked();
+			m_bool.store(m_lock.IsLocked(), std::memory_order_relaxed);
 		}
 		virtual ~ScopedLockBool() throw() {
-			m_bool = false;
+			m_bool.store(false, std::memory_order_relaxed);
 		}
 		void Acquire() {
 			m_lock.Acquire();
-			m_bool = m_lock.IsLocked();
+			m_bool.store(m_lock.IsLocked(), std::memory_order_relaxed);
 		}
 		void Release() {
-			m_bool = false;
+			m_bool.store(false, std::memory_order_relaxed);
 			m_lock.Release();
 		}
 	};

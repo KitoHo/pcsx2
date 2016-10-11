@@ -25,11 +25,7 @@
 	#define WX_STR(str) (str.wc_str())
 #else
 // Stupid wx3.0 doesn't support c_str for vararg function
-#if wxMAJOR_VERSION >= 3
 	#define WX_STR(str) (static_cast<const char*>(str.c_str()))
-#else
-	#define WX_STR(str) (str.c_str())
-#endif
 #endif
 
 // --------------------------------------------------------------------------------------
@@ -136,6 +132,7 @@ struct ParsedAssignmentString
 //    accepts Ascii/UTF8 only.
 //
 
+typedef ScopedAlignedAlloc<char, 16> CharBufferType;
 // --------------------------------------------------------------------------------------
 //  FastFormatAscii 
 // --------------------------------------------------------------------------------------
@@ -143,9 +140,8 @@ struct ParsedAssignmentString
 class FastFormatAscii
 {
 protected:
-	ScopedAlignedAlloc<char,16>*	m_dest;
-	bool				m_deleteDest;
-	
+	CharBufferType m_dest;
+
 public:
 	FastFormatAscii();
 	~FastFormatAscii() throw();
@@ -155,8 +151,8 @@ public:
 	void Clear();
 	bool IsEmpty() const;
 
-	const char* c_str() const		{ return m_dest->GetPtr(); }
-	operator const char*() const	{ return m_dest->GetPtr(); }
+	const char* c_str() const		{ return m_dest.GetPtr(); }
+	operator const char*() const	{ return m_dest.GetPtr(); }
 
 	const wxString GetString() const;
 	//operator wxString() const;
@@ -186,9 +182,8 @@ public:
 class FastFormatUnicode
 {
 protected:
-	ScopedAlignedAlloc<char,16>*	m_dest;
-	bool				m_deleteDest;
-	uint				m_Length;
+	CharBufferType m_dest;
+	uint m_Length;
 
 public:
 	FastFormatUnicode();
@@ -196,9 +191,7 @@ public:
 
 	FastFormatUnicode& Write( const char* fmt, ... );
 	FastFormatUnicode& Write( const wxChar* fmt, ... );
-#if wxMAJOR_VERSION >= 3
 	FastFormatUnicode& Write( const wxString fmt, ... );
-#endif
 	FastFormatUnicode& WriteV( const char* fmt, va_list argptr );
 	FastFormatUnicode& WriteV( const wxChar* fmt, va_list argptr );
 
@@ -209,9 +202,9 @@ public:
 	FastFormatUnicode& ToUpper();
 	FastFormatUnicode& ToLower();
 
-	const wxChar* c_str() const		{ return (const wxChar*)m_dest->GetPtr(); }
-	operator const wxChar*() const	{ return (const wxChar*)m_dest->GetPtr(); }
-	operator wxString() const		{ return (const wxChar*)m_dest->GetPtr(); }
+	const wxChar* c_str() const		{ return (const wxChar*)m_dest.GetPtr(); }
+	operator const wxChar*() const	{ return (const wxChar*)m_dest.GetPtr(); }
+	operator wxString() const		{ return (const wxChar*)m_dest.GetPtr(); }
 
 	FastFormatUnicode& operator+=(const wxString& s)
 	{

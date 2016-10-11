@@ -32,12 +32,14 @@ class GSRendererHW : public GSRenderer
 private:
 	int m_width;
 	int m_height;
-	int m_skip;
+	int m_custom_width;
+	int m_custom_height;
 	bool m_reset;
 	int m_upscale_multiplier;
-	int m_userhacks_skipdraw;
 
+	bool m_large_framebuffer;
 	bool m_userhacks_align_sprite_X;
+	bool m_userhacks_disable_gs_mem_clear;
 
 	#pragma region hacks
 
@@ -45,28 +47,31 @@ private:
 	typedef void (GSRendererHW::*OO_Ptr)();
 	typedef bool (GSRendererHW::*CU_Ptr)();
 
-	bool OI_DoubleHalfClear(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
+	// Require special argument
+	bool OI_BlitFMV(GSTextureCache::Target* _rt, GSTextureCache::Source* t, const GSVector4i& r_draw);
+	void OI_GsMemClear(); // always on
+	void OI_DoubleHalfClear(GSTexture* rt, GSTexture* ds); // always on
+
+	bool OI_DoubleHalfClear_Vertical(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_FFXII(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_FFX(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_MetalSlug6(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_GodOfWar2(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_SimpsonsGame(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_RozenMaidenGebetGarden(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_SpidermanWoS(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_TyTasmanianTiger(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_DigimonRumbleArena2(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_BlackHawkDown(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_StarWarsForceUnleashed(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_XmenOriginsWolverine(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_CallofDutyFinalFronts(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_SpyroNewBeginning(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_SpyroEternalNight(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_TalesOfLegendia(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_SMTNocturne(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_PointListPalette(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
 	bool OI_SuperManReturns(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
+	bool OI_ArTonelico2(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
+	bool OI_ItadakiStreet(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
+	bool OI_FFVIIDoC(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
+
 	void OO_DBZBT2();
 	void OO_MajokkoALaMode2();
+	void OO_Jak();
 
 	bool CU_DBZBT2();
 	bool CU_MajokkoALaMode2();
@@ -134,7 +139,7 @@ private:
 
 	#pragma endregion
 
-	int Interpolate_UV(float alpha, int t0, int t1);
+	uint16 Interpolate_UV(float alpha, int t0, int t1);
 	float alpha0(int L, int X0, int X1);
 	float alpha1(int L, int X0, int X1);
 
@@ -147,6 +152,8 @@ protected:
 
 	int m_userhacks_round_sprite_offset;
 
+	bool m_channel_shuffle;
+
 public:
 	GSRendererHW(GSTextureCache* tc);
 	virtual ~GSRendererHW();
@@ -154,13 +161,13 @@ public:
 	void SetGameCRC(uint32 crc, int options);
 	bool CanUpscale();
 	int GetUpscaleMultiplier();
-	virtual GSVector2i GetInternalResolution();
+	GSVector2i GetCustomResolution();
 	void SetScaling();
 
 	void Reset();
 	void VSync(int field);
 	void ResetDevice();
-	GSTexture* GetOutput(int i);
+	GSTexture* GetOutput(int i, int& y_offset);
 	void InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r);
 	void InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r, bool clut = false);
 	void Draw();

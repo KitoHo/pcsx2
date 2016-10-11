@@ -39,22 +39,21 @@
 //#define DISABLE_DATE
 
 
-#if defined(_DEBUG) || defined(_DEVEL)
+#if !defined(NDEBUG) || defined(_DEBUG) || defined(_DEVEL)
 #define ENABLE_OGL_DEBUG   // Create a debug context and check opengl command status. Allow also to dump various textures/states.
 //#define ENABLE_OGL_DEBUG_FENCE
-#endif
 //#define ENABLE_OGL_DEBUG_MEM_BW // compute the quantity of data transfered (debug purpose)
+//#define ENABLE_TRACE_REG
+#endif
 
-#if defined(__linux__) && !(defined(_DEBUG) || defined(_DEVEL))
+#if defined(__unix__) && !(defined(_DEBUG) || defined(_DEVEL))
 #define DISABLE_PERF_MON // Burn cycle for nothing in release mode
 #endif
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 //#define ENABLE_OPENCL
 #endif
 
-#if defined(__linux__) && PNGPP_SUPPORTED
-// Allow to dump texture as PNG (require libpng++). It reduces the size of the dump
-// and alpha is well supported (on linux)
-#define ENABLE_OGL_PNG
-#endif
+// Disable harmless assertion on stuff not yet finish. Or that requires investigation.
+// Goal of the define is to allow to run a debug build without too much pain.
+//#define DISABLE_WIP_ASSERTION

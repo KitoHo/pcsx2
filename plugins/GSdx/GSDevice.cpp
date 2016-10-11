@@ -40,6 +40,7 @@ GSDevice::GSDevice()
 {
 	memset(&m_vertex, 0, sizeof(m_vertex));
 	memset(&m_index, 0, sizeof(m_index));
+	m_linear_present = theApp.GetConfigB("linear_present");
 }
 
 GSDevice::~GSDevice()
@@ -109,6 +110,7 @@ void GSDevice::Present(const GSVector4i& r, int shader)
 
 	GL_PUSH("Present");
 
+	// FIXME is it mandatory, it could be slow
 	ClearRenderTarget(m_backbuffer, 0);
 
 	if(m_current)
@@ -121,20 +123,18 @@ void GSDevice::Present(const GSVector4i& r, int shader)
 	}
 
 	Flip();
-
-	GL_POP();
 }
 
 void GSDevice::Present(GSTexture* sTex, GSTexture* dTex, const GSVector4& dRect, int shader)
 {
-	StretchRect(sTex, dTex, dRect, shader);
+	StretchRect(sTex, dTex, dRect, shader, m_linear_present);
 }
 
 GSTexture* GSDevice::FetchSurface(int type, int w, int h, bool msaa, int format)
 {
 	GSVector2i size(w, h);
 
-	for(list<GSTexture*>::iterator i = m_pool.begin(); i != m_pool.end(); i++)
+	for(list<GSTexture*>::iterator i = m_pool.begin(); i != m_pool.end(); ++i)
 	{
 		GSTexture* t = *i;
 
@@ -175,17 +175,6 @@ void GSDevice::Recycle(GSTexture* t)
 {
 	if(t)
 	{
-		// FIXME: WARNING: Broken Texture Cache reuse render target without any
-		// cleaning (or uploading of correct gs mem data) Ofc it is wrong. If
-		// blending is enabled, rendering would be completely broken. However
-		// du to wrong invalidation of the TC it is sometimes better to reuse
-		// (partially) wrong data...
-		//
-		// Invalidating the data might be even worse. I'm not sure invalidating data really
-		// help on the perf. But people reports better perf on BDG2 (memory intensive) on OpenGL.
-		// It could be the reason.
-		t->Invalidate();
-
 		t->last_frame_used = m_frame;
 
 		m_pool.push_front(t);
@@ -205,7 +194,18 @@ void GSDevice::AgePool()
 {
 	m_frame++;
 
-	while(m_pool.size() > 20 && m_frame - m_pool.back()->last_frame_used > 10)
+	while(m_pool.size() > 40 && m_frame - m_pool.back()->last_frame_used > 10)
+	{
+		delete m_pool.back();
+
+		m_pool.pop_back();
+	}
+}
+
+void GSDevice::PurgePool()
+{
+	// OOM emergency. Let's free this useless pool
+	while(!m_pool.empty())
 	{
 		delete m_pool.back();
 
@@ -350,7 +350,7 @@ void GSDevice::ExternalFX()
 		GSVector4 sRect(0, 0, 1, 1);
 		GSVector4 dRect(0, 0, s.x, s.y);
 
-		StretchRect(m_current, sRect, m_shaderfx, dRect, 7, false);
+		StretchRect(m_current, sRect, m_shaderfx, dRect, ShaderConvert_TRANSPARENCY_FILTER, false);
 		DoExternalFX(m_shaderfx, m_current);
 	}
 }
@@ -370,7 +370,7 @@ void GSDevice::FXAA()
 		GSVector4 sRect(0, 0, 1, 1);
 		GSVector4 dRect(0, 0, s.x, s.y);
 
-		StretchRect(m_current, sRect, m_fxaa, dRect, 7, false);
+		StretchRect(m_current, sRect, m_fxaa, dRect, ShaderConvert_TRANSPARENCY_FILTER, false);
 		DoFXAA(m_fxaa, m_current);
 	}
 }
@@ -390,7 +390,7 @@ void GSDevice::ShadeBoost()
 		GSVector4 sRect(0, 0, 1, 1);
 		GSVector4 dRect(0, 0, s.x, s.y);
 
-		StretchRect(m_current, sRect, m_shadeboost, dRect, 0, false);
+		StretchRect(m_current, sRect, m_shadeboost, dRect, ShaderConvert_COPY, false);
 		DoShadeBoost(m_shadeboost, m_current);
 	}
 }
@@ -428,7 +428,7 @@ bool GSAdapter::operator==(const GSAdapter &desc_dxgi) const
 		&& rev == desc_dxgi.rev;
 }
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 GSAdapter::GSAdapter(const DXGI_ADAPTER_DESC1 &desc_dxgi)
 	: vendor(desc_dxgi.VendorId)
 	, device(desc_dxgi.DeviceId)

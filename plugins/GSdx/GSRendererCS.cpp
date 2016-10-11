@@ -103,7 +103,7 @@ bool GSRendererCS::CreateDevice(GSDevice* dev_unk)
 	sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
 	sd.MinLOD = -FLT_MAX;
 	sd.MaxLOD = FLT_MAX;
-	sd.MaxAnisotropy = theApp.GetConfig("MaxAnisotropy", 0);
+	sd.MaxAnisotropy = theApp.GetConfigI("MaxAnisotropy");
 	sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
 
 	hr = (*dev)->CreateSamplerState(&sd, &m_ss);
@@ -288,7 +288,7 @@ bool GSRendererCS::CreateDevice(GSDevice* dev_unk)
 
 	// PS
 
-	D3D11_SHADER_MACRO macro[] =
+	D3D_SHADER_MACRO macro[] =
 	{
 		{NULL, NULL},
 	};
@@ -297,7 +297,7 @@ bool GSRendererCS::CreateDevice(GSDevice* dev_unk)
 	{
 		vector<unsigned char> shader;
 		theApp.LoadResource(IDR_CS_FX, shader);
-		dev->CompileShader((const char *)shader.data(), shader.size(), "cs.fx", "ps_main0", macro, &m_ps0);
+		dev->CompileShader((const char *)shader.data(), shader.size(), "cs.fx", nullptr, "ps_main0", macro, &m_ps0);
 	}
 	catch (GSDXRecoverableError)
 	{
@@ -338,7 +338,7 @@ void GSRendererCS::VSync(int field)
 	//printf("%lld\n", m_perfmon.GetFrame());
 }
 
-GSTexture* GSRendererCS::GetOutput(int i)
+GSTexture* GSRendererCS::GetOutput(int i, int& y_offset)
 {
 	// TODO: create a compute shader which unswizzles the frame from m_vm to the output texture
 
@@ -514,7 +514,7 @@ void GSRendererCS::Draw()
 			str[0] = format("%d", vs_sel.tme);
 			str[1] = format("%d", vs_sel.fst);
 
-			D3D11_SHADER_MACRO macro[] =
+			D3D_SHADER_MACRO macro[] =
 			{
 				{"VS_TME", str[0].c_str()},
 				{"VS_FST", str[1].c_str()},
@@ -534,7 +534,7 @@ void GSRendererCS::Draw()
 
 			vector<unsigned char> shader;
 			theApp.LoadResource(IDR_CS_FX, shader);
-			dev->CompileShader((const char *)shader.data(), shader.size(), "cs.fx", "vs_main", macro, &vs.vs, layout, countof(layout), &vs.il);
+			dev->CompileShader((const char *)shader.data(), shader.size(), "cs.fx", nullptr, "vs_main", macro, &vs.vs, layout, countof(layout), &vs.il);
 
 			m_vs[vs_sel] = vs;
 		}
@@ -571,7 +571,7 @@ void GSRendererCS::Draw()
 			str[0] = format("%d", gs_sel.iip);
 			str[1] = format("%d", j == 0 ? gs_sel.prim : GS_SPRITE_CLASS);
 
-			D3D11_SHADER_MACRO macro[] =
+			D3D_SHADER_MACRO macro[] =
 			{
 				{"GS_IIP", str[0].c_str()},
 				{"GS_PRIM", str[1].c_str()},
@@ -580,7 +580,7 @@ void GSRendererCS::Draw()
 
 			vector<unsigned char> shader;
 			theApp.LoadResource(IDR_CS_FX, shader);
-			dev->CompileShader((const char *)shader.data(), shader.size(), "cs.fx", "gs_main", macro, &gs[j]);
+			dev->CompileShader((const char *)shader.data(), shader.size(), "cs.fx", nullptr, "gs_main", macro, &gs[j]);
 
 			m_gs[gs_sel] = gs[j];
 		}
@@ -611,7 +611,7 @@ void GSRendererCS::Draw()
 		str[1] = format("%d", context->FRAME.PSM);
 		str[2] = format("%d", context->ZBUF.PSM);
 
-		D3D11_SHADER_MACRO macro[] =
+		D3D_SHADER_MACRO macro[] =
 		{
 			{"PS_BATCH_SIZE", str[0].c_str()},
 			{"PS_FPSM", str[1].c_str()},
@@ -621,7 +621,7 @@ void GSRendererCS::Draw()
 
 		vector<unsigned char> shader;
 		theApp.LoadResource(IDR_CS_FX, shader);
-		dev->CompileShader((const char *)shader.data(), shader.size(), "cs.fx", "ps_main1", macro, &ps[1]);
+		dev->CompileShader((const char *)shader.data(), shader.size(), "cs.fx", nullptr, "ps_main1", macro, &ps[1]);
 
 		m_ps1[ps_sel] = ps[1];
 	}
@@ -747,7 +747,7 @@ void GSRendererCS::Write(GSOffset* off, const GSVector4i& r)
 			ctx->UpdateSubresource(m_vm, 0, &box, m_mem.m_vm8 + page * PAGE_SIZE, 0, 0);
 */
 			if(0)
-			printf("[%lld] write %05x %d %d (%d)\n", __rdtsc(), off->bp, off->bw, off->psm, page);
+			printf("[%lld] write %05x %u %u (%u)\n", __rdtsc(), off->bp, off->bw, off->psm, page);
 		}
 	}
 
@@ -807,7 +807,7 @@ void GSRendererCS::Read(GSOffset* off, const GSVector4i& r, bool invalidate)
 				ctx->Unmap(m_pb, 0);
 				
 				if(0)
-				printf("[%lld] read %05x %d %d (%d)\n", __rdtsc(), off->bp, off->bw, off->psm, page);
+				printf("[%lld] read %05x %u %u (%u)\n", __rdtsc(), off->bp, off->bw, off->psm, page);
 			}
 		}
 	}

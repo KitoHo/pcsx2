@@ -68,8 +68,9 @@ VifUnpackSSE_Dynarec::VifUnpackSSE_Dynarec(const nVifStruct& vif_, const nVifBlo
 	vCL			= 0;
 }
 
-#define makeMergeMask(x) {									\
-	x = ((x&0x40)>>6) | ((x&0x10)>>3) | (x&4) | ((x&1)<<3);	\
+__fi void makeMergeMask(u32& x)
+{
+	x = ((x&0x40)>>6) | ((x&0x10)>>3) | (x&4) | ((x&1)<<3);
 }
 
 __fi void VifUnpackSSE_Dynarec::SetMasks(int cS) const {
@@ -118,14 +119,29 @@ void VifUnpackSSE_Dynarec::doMaskWrite(const xRegisterSSE& regX) const {
 		if (m5 < 0xf) 
 		{			
 			xPXOR(xmmTemp, xmmTemp);
-			mergeVectors(xmmTemp, xmmRow, xmmTemp, m5);
-			xPADD.D(regX, xmmTemp);
-			if (doMode==2) mergeVectors(xmmRow, regX, xmmTemp, m5);
+			if (doMode == 3)
+			{
+				mergeVectors(xmmRow, regX, xmmTemp, m5);
+			}
+			else
+			{
+				mergeVectors(xmmTemp, xmmRow, xmmTemp, m5);
+				xPADD.D(regX, xmmTemp);
+				if (doMode == 2) mergeVectors(xmmRow, regX, xmmTemp, m5);
+			}
+			
 		}
 		else
 		{
-			xPADD.D(regX, xmmRow);
-			if (doMode==2){ xMOVAPS(xmmRow, regX); }
+			if (doMode == 3)
+			{
+				xMOVAPS(xmmRow, regX);
+			}
+			else
+			{
+				xPADD.D(regX, xmmRow);
+				if (doMode == 2) { xMOVAPS(xmmRow, regX); }
+			}
 		}
 	}
 	xMOVAPS(ptr32[dstIndirect], regX);
@@ -135,11 +151,11 @@ void VifUnpackSSE_Dynarec::writeBackRow() const {
 	const int idx = v.idx;
 	xMOVAPS(ptr128[&(MTVU_VifX.MaskRow)], xmmRow);
 
-	DevCon.WriteLn("nVif: writing back row reg! [doMode = 2]");
+	DevCon.WriteLn("nVif: writing back row reg! [doMode = %d]", doMode);
 	// ToDo: Do we need to write back to vifregs.rX too!? :/
 }
 
-static void ShiftDisplacementWindow( xAddressVoid& addr, const xRegister32& modReg )
+static void ShiftDisplacementWindow( xAddressVoid& addr, const xRegisterLong& modReg )
 {
 	// Shifts the displacement factor of a given indirect address, so that the address
 	// remains in the optimal 0xf0 range (which allows for byte-form displacements when
@@ -159,16 +175,16 @@ void VifUnpackSSE_Dynarec::ModUnpack( int upknum, bool PostOp )
 	
 	switch( upknum )
 	{
-		case 0:	
-		case 1: 
-		case 2: if(PostOp == true) { UnpkLoopIteration++; UnpkLoopIteration = UnpkLoopIteration & 0x3; } break;
+		case 0:
+		case 1:
+		case 2: if(PostOp) { UnpkLoopIteration++; UnpkLoopIteration = UnpkLoopIteration & 0x3; } break;
 
-		case 4:  
+		case 4:
 		case 5:
-		case 6: if(PostOp == true) { UnpkLoopIteration++; UnpkLoopIteration = UnpkLoopIteration & 0x1; } break;
+		case 6: if(PostOp) { UnpkLoopIteration++; UnpkLoopIteration = UnpkLoopIteration & 0x1; } break;
 
-		case 8: if(PostOp == true) { UnpkLoopIteration++; UnpkLoopIteration = UnpkLoopIteration & 0x1; } break;
-		case 9:	if (PostOp == false) { UnpkLoopIteration++; } break;
+		case 8: if(PostOp) { UnpkLoopIteration++; UnpkLoopIteration = UnpkLoopIteration & 0x1; } break;
+		case 9:	if (!PostOp) { UnpkLoopIteration++; } break;
 		case 10: 	break;
 
 		case 12: 	break;
@@ -193,6 +209,7 @@ void VifUnpackSSE_Dynarec::CompileRoutine() {
 	
 	uint vNum	= vB.num ? vB.num : 256;
 	doMode		= (upkNum == 0xf) ? 0 : doMode;		// V4_5 has no mode feature.
+	UnpkNoOfIterations = 0;
 	MSKPATH3_LOG("Compiling new block, unpack number %x, mode %x, masking %x, vNum %x", upkNum, doMode, doMask, vNum);
 	
 	pxAssume(vCL == 0);
@@ -239,7 +256,7 @@ void VifUnpackSSE_Dynarec::CompileRoutine() {
 		}
 	}
 
-	if (doMode==2) writeBackRow();
+	if (doMode>=2) writeBackRow();
 	xRET();
 }
 
@@ -248,17 +265,16 @@ _vifT static __fi u8* dVifsetVUptr(uint cl, uint wl, bool isFill) {
 	vifStruct&    vif        = MTVU_VifX;
 	const VURegs& VU         = vuRegs[idx];
 	const uint    vuMemLimit = idx ? 0x4000 : 0x1000;
-
+	
 	u8*  startmem = VU.Mem + (vif.tag.addr & (vuMemLimit-0x10));
 	u8*  endmem   = VU.Mem + vuMemLimit;
 	uint length   = (v.block.num > 0) ? (v.block.num * 16) : 4096; // 0 = 256
 
+	//wl = wl ? wl : 256; //0 is taken as 256 (KH2)
+	//if (wl == 256) isFill = true;
 	if (!isFill) {
-		// Accounting for skipping mode: Subtract the last skip cycle, since the skipped part of the run
-		// shouldn't count as wrapped data.  Otherwise, a trailing skip can cause the emu to drop back
-		// to the interpreter. -- Refraction (test with MGS3)
 		uint skipSize  = (cl - wl) * 16;
-		uint blocks    = v.block.num / wl;
+		uint blocks    = (v.block.num + (wl-1)) / wl; //Need to round up num's to calculate skip size correctly.
 		length += (blocks-1) * skipSize;
 	}
 
@@ -313,7 +329,7 @@ _vifT __fi void dVifUnpack(const u8* data, bool isFill) {
 	v.block.num     = (u8&)vifRegs.num;
 	v.block.mode    = (u8&)vifRegs.mode;
 	v.block.cl      = vifRegs.cycle.cl;
-	v.block.wl      = vifRegs.cycle.wl;
+	v.block.wl      = vifRegs.cycle.wl ? vifRegs.cycle.wl : 256;
 	v.block.aligned = vif.start_aligned;  //MTVU doesn't have a packet size!
 
 	if ((upkType & 0xf) != 9)

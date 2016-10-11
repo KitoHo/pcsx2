@@ -90,10 +90,10 @@ class GSVector8i;
 
 #endif
 
-__aligned(class, 16) GSVector4i
+class alignas(16) GSVector4i
 {
-	static const GSVector4i m_xff[17];
-	static const GSVector4i m_x0f[17];
+	static GSVector4i m_xff[17];
+	static GSVector4i m_x0f[17];
 
 public:
 	union
@@ -113,6 +113,8 @@ public:
 		uint64 u64[2];
 		__m128i m;
 	};
+
+	static void InitVectors();
 
 	__forceinline GSVector4i()
 	{
@@ -239,15 +241,7 @@ public:
 
 		if(i == 0xffff)
 		{
-			#if _M_SSE >= 0x401
-
-			return min_i32(a).upl64(max_i32(a).srl<8>());
-
-			#else
-
-			return GSVector4i(min(x, a.x), min(y, a.y), max(z, a.z), max(w, a.w));
-
-			#endif
+			return runion_ordered(a);
 		}
 
 		if((i & 0x00ff) == 0x00ff)
@@ -261,6 +255,19 @@ public:
 		}
 
 		return GSVector4i::zero();
+	}
+
+	__forceinline GSVector4i runion_ordered(const GSVector4i& a) const
+	{
+		#if _M_SSE >= 0x401
+
+		return min_i32(a).upl64(max_i32(a).srl<8>());
+
+		#else
+
+		return GSVector4i(min(x, a.x), min(y, a.y), max(z, a.z), max(w, a.w));
+
+		#endif
 	}
 
 	__forceinline GSVector4i rintersect(const GSVector4i& a) const
@@ -292,7 +299,7 @@ public:
 
 	GSVector4i fit(int preset) const;
 
-	#ifdef _WINDOWS
+	#ifdef _WIN32
 
 	__forceinline operator LPCRECT() const
 	{
@@ -886,6 +893,13 @@ public:
 		return GSVector4i(_mm_sll_epi32(m, i));
 	}
 
+#if _M_SSE >= 0x501
+	__forceinline GSVector4i sllv32(__m128i i) const
+	{
+		return GSVector4i(_mm_sllv_epi32(m, i));
+	}
+#endif
+
 	__forceinline GSVector4i sll64(int i) const
 	{
 		return GSVector4i(_mm_slli_epi64(m, i));
@@ -915,6 +929,13 @@ public:
 	{
 		return GSVector4i(_mm_srl_epi32(m, i));
 	}
+
+#if _M_SSE >= 0x501
+	__forceinline GSVector4i srlv32(__m128i i) const
+	{
+		return GSVector4i(_mm_srlv_epi32(m, i));
+	}
+#endif
 
 	__forceinline GSVector4i srl64(int i) const
 	{
@@ -2402,7 +2423,7 @@ public:
 	__forceinline static GSVector4i x0f(int n) {return m_x0f[n];}
 };
 
-__aligned(class, 16) GSVector4
+class alignas(16) GSVector4
 {
 public:
 	union
@@ -2423,16 +2444,18 @@ public:
 		__m128 m;
 	};
 
-	static const GSVector4 m_ps0123;
-	static const GSVector4 m_ps4567;
-	static const GSVector4 m_half;
-	static const GSVector4 m_one;
-	static const GSVector4 m_two;
-	static const GSVector4 m_four;
-	static const GSVector4 m_x4b000000;
-	static const GSVector4 m_x4f800000;
-	static const GSVector4 m_max;
-	static const GSVector4 m_min;
+	static GSVector4 m_ps0123;
+	static GSVector4 m_ps4567;
+	static GSVector4 m_half;
+	static GSVector4 m_one;
+	static GSVector4 m_two;
+	static GSVector4 m_four;
+	static GSVector4 m_x4b000000;
+	static GSVector4 m_x4f800000;
+	static GSVector4 m_max;
+	static GSVector4 m_min;
+
+	static void InitVectors();
 
 	__forceinline GSVector4()
 	{
@@ -3077,6 +3100,11 @@ GSVector.h:2973:15: error:  shadows template parm 'int i'
 		else _mm_storeu_ps((float*)p, v.m);
 	}
 
+	__forceinline static void store(float* p, const GSVector4& v)
+	{
+		_mm_store_ss(p, v.m);
+	}
+
 	__forceinline static void expand(const GSVector4i& v, GSVector4& a, GSVector4& b, GSVector4& c, GSVector4& d)
 	{
 		GSVector4i mask = GSVector4i::x000000ff();
@@ -3322,10 +3350,10 @@ GSVector.h:2973:15: error:  shadows template parm 'int i'
 
 #if _M_SSE >= 0x501
 
-__aligned(class, 32) GSVector8i
+class alignas(32) GSVector8i
 {
-	static const GSVector8i m_xff[33];
-	static const GSVector8i m_x0f[33];
+	static GSVector8i m_xff[33];
+	static GSVector8i m_x0f[33];
 
 public:
 	union
@@ -3345,6 +3373,8 @@ public:
 		__m256i m;
 		__m128i m0, m1;
 	};
+
+	static void InitVectors();
 
 	__forceinline GSVector8i() {}
 
@@ -5114,7 +5144,7 @@ public:
 
 #if _M_SSE >= 0x500
 
-__aligned(class, 32) GSVector8
+class alignas(32) GSVector8
 {
 public:
 	union
@@ -5135,14 +5165,16 @@ public:
 		__m128 m0, m1;
 	};
 
-	static const GSVector8 m_half;
-	static const GSVector8 m_one;
-	static const GSVector8 m_x7fffffff;
-	static const GSVector8 m_x80000000;
-	static const GSVector8 m_x4b000000;
-	static const GSVector8 m_x4f800000;
-	static const GSVector8 m_max;
-	static const GSVector8 m_min;
+	static GSVector8 m_half;
+	static GSVector8 m_one;
+	static GSVector8 m_x7fffffff;
+	static GSVector8 m_x80000000;
+	static GSVector8 m_x4b000000;
+	static GSVector8 m_x4f800000;
+	static GSVector8 m_max;
+	static GSVector8 m_min;
+
+	static void InitVectors();
 
 	__forceinline GSVector8() 
 	{

@@ -29,6 +29,7 @@
 #include <wx/cmdline.h>
 #include <wx/intl.h>
 #include <wx/stdpaths.h>
+#include <memory>
 
 using namespace pxSizerFlags;
 
@@ -128,7 +129,7 @@ void Pcsx2App::AllocateCoreStuffs()
 		// FIXME : Some or all of SysCpuProviderPack should be run from the SysExecutor thread,
 		// so that the thread is safely blocked from being able to start emulation.
 
-		m_CpuProviders = new SysCpuProviderPack();
+		m_CpuProviders = std::unique_ptr<SysCpuProviderPack>(new SysCpuProviderPack());
 
 		if( m_CpuProviders->HadSomeFailures( g_Conf->EmuOptions.Cpu.Recompiler ) )
 		{
@@ -214,7 +215,7 @@ void Pcsx2App::AllocateCoreStuffs()
 
 void Pcsx2App::OnInitCmdLine( wxCmdLineParser& parser )
 {
-	parser.SetLogo( AddAppName(" >>  %s  --  A Playstation2 Emulator for the PC  <<") + L"\n\n" +
+	parser.SetLogo( AddAppName(" >>  %s  --  A PlayStation 2 Emulator for the PC  <<") + L"\n\n" +
 		_("All options are for the current session only and will not be saved.\n")
 	);
 
@@ -235,6 +236,7 @@ void Pcsx2App::OnInitCmdLine( wxCmdLineParser& parser )
 	parser.AddSwitch( wxEmptyString,L"noguiprompt",	_("when nogui - prompt before exiting on suspend") );
 
 	parser.AddOption( wxEmptyString,L"elf",			_("executes an ELF image"), wxCMD_LINE_VAL_STRING );
+	parser.AddOption( wxEmptyString,L"irx",			_("executes an IRX image"), wxCMD_LINE_VAL_STRING );
 	parser.AddSwitch( wxEmptyString,L"nodisc",		_("boots an empty DVD tray; use to enter the PS2 system menu") );
 	parser.AddSwitch( wxEmptyString,L"usecd",		_("boots from the CDVD plugin (overrides IsoFile parameter)") );
 
@@ -352,9 +354,12 @@ bool Pcsx2App::OnCmdLineParsed( wxCmdLineParser& parser )
 		if (parser.Found(L"elf", &elf_file) && !elf_file.IsEmpty()) {
 			Startup.SysAutoRunElf = true;
 			Startup.ElfFile = elf_file;
+		} else if (parser.Found(L"irx", &elf_file) && !elf_file.IsEmpty()) {
+			Startup.SysAutoRunIrx = true;
+			Startup.ElfFile = elf_file;
 		}
 	}
-	
+
 	if( parser.Found(L"usecd") )
 	{
 		Startup.CdvdSource	= CDVDsrc_Plugin;
@@ -418,7 +423,7 @@ bool Pcsx2App::OnInit()
 	pxDoAssert		= AppDoAssert;
 	pxDoOutOfMemory	= SysOutOfMemory_EmergencyResponse;
 
-	g_Conf = new AppConfig();
+	g_Conf = std::unique_ptr<AppConfig>(new AppConfig());
     wxInitAllImageHandlers();
 
 	Console.WriteLn("Applying operating system default language...");
@@ -435,11 +440,8 @@ bool Pcsx2App::OnInit()
 
 	i18n_SetLanguagePath();
 
-#define pxAppMethodEventHandler(func) \
-	(wxObjectEventFunction)(wxEventFunction)wxStaticCastEvent(pxInvokeAppMethodEventFunction, &func )
-
-	Connect( pxID_PadHandler_Keydown,	wxEVT_KEY_DOWN,		wxKeyEventHandler			(Pcsx2App::OnEmuKeyDown) );
-	Connect(							wxEVT_DESTROY,		wxWindowDestroyEventHandler	(Pcsx2App::OnDestroyWindow) );
+	Bind(wxEVT_KEY_DOWN, &Pcsx2App::OnEmuKeyDown, this, pxID_PadHandler_Keydown);
+	Bind(wxEVT_DESTROY, &Pcsx2App::OnDestroyWindow, this);
 
 	// User/Admin Mode Dual Setup:
 	//   PCSX2 now supports two fundamental modes of operation.  The default is Classic mode,
@@ -468,8 +470,8 @@ bool Pcsx2App::OnInit()
 		// PCSX2 has a lot of event handling logistics, so we *cannot* depend on wxWidgets automatic event
 		// loop termination code.  We have a much safer system in place that continues to process messages
 		// until all "important" threads are closed out -- not just until the main frame is closed(-ish).
-		m_timer_Termination = new wxTimer( this, wxID_ANY );
-		Connect( m_timer_Termination->GetId(), wxEVT_TIMER, wxTimerEventHandler(Pcsx2App::OnScheduledTermination) );
+		m_timer_Termination = std::unique_ptr<wxTimer>(new wxTimer( this, wxID_ANY ));
+		Bind(wxEVT_TIMER, &Pcsx2App::OnScheduledTermination, this, m_timer_Termination->GetId());
 		SetExitOnFrameDelete( false );
 
 
@@ -480,8 +482,11 @@ bool Pcsx2App::OnInit()
 		AllocateCoreStuffs();
 		if( m_UseGUI ) OpenMainFrame();
 
-		
+
 		(new GameDatabaseLoaderThread())->Start();
+
+		// By default no IRX injection
+		g_Conf->CurrentIRX = "";
 
 		if( Startup.SysAutoRun )
 		{
@@ -496,10 +501,16 @@ bool Pcsx2App::OnInit()
 		else if ( Startup.SysAutoRunElf )
 		{
 			g_Conf->EmuOptions.UseBOOT2Injection = true;
-			// Enable iop/ee logging
-			SysConsole.eeConsole.Enabled = true;
-			SysConsole.iopConsole.Enabled = true;
 
+			sApp.SysExecute( Startup.CdvdSource, Startup.ElfFile );
+		}
+		else if (Startup.SysAutoRunIrx )
+		{
+			g_Conf->EmuOptions.UseBOOT2Injection = true;
+
+			g_Conf->CurrentIRX = Startup.ElfFile;
+
+			// FIXME: ElfFile is an irx it will crash
 			sApp.SysExecute( Startup.CdvdSource, Startup.ElfFile );
 		}
 	}

@@ -24,6 +24,7 @@
 
 #include <wx/stdpaths.h>
 #include "DebugTools/Debug.h"
+#include <memory>
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // PathDefs Namespace -- contains default values for various pcsx2 path names and locations.
@@ -555,6 +556,9 @@ AppConfig::AppConfig()
 	{
 		Mcd[slot].Enabled	= !FileMcd_IsMultitapSlot(slot);	// enables main 2 slots
 		Mcd[slot].Filename	= FileMcd_GetDefaultName( slot );
+
+		// Folder memory card is autodetected later.
+		Mcd[slot].Type = MemoryCardType::MemoryCard_File;
 	}
 
 	GzipIsoIndexTemplate = L"$(f).pindex.tmp";
@@ -659,6 +663,7 @@ void AppConfig::LoadSaveRootItems( IniInterface& ini )
 	CurrentIso = res.GetFullPath();
 
 	IniEntry( CurrentELF );
+	IniEntry( CurrentIRX );
 
 	IniEntry( EnableSpeedHacks );
 	IniEntry( EnableGameFixes );
@@ -843,7 +848,8 @@ AppConfig::GSWindowOptions::GSWindowOptions()
 	IsMaximized				= false;
 	IsFullscreen			= false;
 
-    IsToggleFullscreenOnDoubleClick = true;
+	IsToggleFullscreenOnDoubleClick = true;
+	IsToggleAspectRatioSwitch = false;
 }
 
 void AppConfig::GSWindowOptions::SanityCheck()
@@ -880,7 +886,8 @@ void AppConfig::GSWindowOptions::LoadSave( IniInterface& ini )
 	IniEntry( IsMaximized );
 	IniEntry( IsFullscreen );
 
-    IniEntry( IsToggleFullscreenOnDoubleClick );
+	IniEntry( IsToggleFullscreenOnDoubleClick );
+	IniEntry( IsToggleAspectRatioSwitch );
 
 	static const wxChar* AspectRatioNames[] =
 	{
@@ -1241,7 +1248,7 @@ static void LoadUiSettings()
 	ConLog_LoadSaveSettings( loader );
 	SysTraceLog_LoadSaveSettings( loader );
 
-	g_Conf = new AppConfig();
+	g_Conf = std::unique_ptr<AppConfig>(new AppConfig());
 	g_Conf->LoadSave( loader );
 
 	if( !wxFile::Exists( g_Conf->CurrentIso ) )
@@ -1255,8 +1262,8 @@ static void LoadVmSettings()
 	// Load virtual machine options and apply some defaults overtop saved items, which
 	// are regulated by the PCSX2 UI.
 
-	ScopedPtr<wxFileConfig> vmini( OpenFileConfig( GetVmSettingsFilename() ) );
-	IniLoader vmloader( vmini );
+	std::unique_ptr<wxFileConfig> vmini( OpenFileConfig( GetVmSettingsFilename() ) );
+	IniLoader vmloader( vmini.get() );
 	g_Conf->EmuOptions.LoadSave( vmloader );
 	g_Conf->EmuOptions.GS.LimitScalar = g_Conf->Framerate.NominalScalar;
 
@@ -1292,8 +1299,8 @@ static void SaveUiSettings()
 
 static void SaveVmSettings()
 {
-	ScopedPtr<wxFileConfig> vmini( OpenFileConfig( GetVmSettingsFilename() ) );
-	IniSaver vmsaver( vmini );
+	std::unique_ptr<wxFileConfig> vmini( OpenFileConfig( GetVmSettingsFilename() ) );
+	IniSaver vmsaver( vmini.get() );
 	g_Conf->EmuOptions.LoadSave( vmsaver );
 
 	sApp.DispatchVmSettingsEvent( vmsaver );
@@ -1301,15 +1308,15 @@ static void SaveVmSettings()
 
 static void SaveRegSettings()
 {
-	ScopedPtr<wxConfigBase> conf_install;
+	std::unique_ptr<wxConfigBase> conf_install;
 
 	if (InstallationMode == InstallMode_Portable) return;
 
 	// sApp. macro cannot be use because you need the return value of OpenInstallSettingsFile method
-	if( Pcsx2App* __app_ = (Pcsx2App*)wxApp::GetInstance() ) conf_install = (*__app_).OpenInstallSettingsFile();
+	if( Pcsx2App* __app_ = (Pcsx2App*)wxApp::GetInstance() ) conf_install = std::unique_ptr<wxConfigBase>((*__app_).OpenInstallSettingsFile());
 	conf_install->SetRecordDefaults(false);
 
-	App_SaveInstallSettings( conf_install );
+	App_SaveInstallSettings( conf_install.get() );
 }
 
 void AppSaveSettings()
@@ -1317,11 +1324,11 @@ void AppSaveSettings()
 	// If multiple SaveSettings messages are requested, we want to ignore most of them.
 	// Saving settings once when the GUI is idle should be fine. :)
 
-	static u32 isPosted = false;
+	static std::atomic<bool> isPosted(false);
 
 	if( !wxThread::IsMain() )
 	{
-		if( !AtomicExchange(isPosted, true) )
+		if( !isPosted.exchange(true) )
 			wxGetApp().PostIdleMethod( AppSaveSettings );
 
 		return;
@@ -1333,7 +1340,7 @@ void AppSaveSettings()
 	SaveVmSettings();
 	SaveRegSettings(); // save register because of PluginsFolder change
 
-	AtomicExchange( isPosted, false );
+	isPosted = false;
 }
 
 

@@ -74,7 +74,7 @@ public:
 	s32  Save		( uint slot, const u8 *src, u32 adr, int size );
 	s32  EraseBlock	( uint slot, u32 adr );
 	u64  GetCRC		( uint slot );
-	
+
 protected:
 	bool Seek( wxFFile& f, u32 adr );
 	bool Create( const wxString& mcdFile, uint sizeInMB );
@@ -143,6 +143,7 @@ wxString FileMcd_GetDefaultName(uint slot)
 FileMemoryCard::FileMemoryCard()
 {
 	memset8<0xff>( m_effeffs );
+	m_chkaddr = 0;
 }
 
 void FileMemoryCard::Open()
@@ -562,17 +563,17 @@ static void PS2E_CALLBACK FileMcd_NextFrame( PS2E_THISPTR thisptr, uint port, ui
 	}
 }
 
-static void PS2E_CALLBACK FileMcd_ReIndex( PS2E_THISPTR thisptr, uint port, uint slot, const wxString& filter ) {
+static bool PS2E_CALLBACK FileMcd_ReIndex( PS2E_THISPTR thisptr, uint port, uint slot, const wxString& filter ) {
 	const uint combinedSlot = FileMcd_ConvertToSlot( port, slot );
 	switch ( g_Conf->Mcd[combinedSlot].Type ) {
 	//case MemoryCardType::MemoryCard_File:
-	//	thisptr->impl.ReIndex( combinedSlot, filter );
+	//	return thisptr->impl.ReIndex( combinedSlot, filter );
 	//	break;
 	case MemoryCardType::MemoryCard_Folder:
-		thisptr->implFolder.ReIndex( combinedSlot, g_Conf->EmuOptions.McdFolderAutoManage, filter );
+		return thisptr->implFolder.ReIndex( combinedSlot, g_Conf->EmuOptions.McdFolderAutoManage, filter );
 		break;
 	default:
-		return;
+		return false;
 	}
 }
 

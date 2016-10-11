@@ -8,50 +8,14 @@ endif(NOT TOP_CMAKE_WAS_SOURCED)
 
 set(Output Utilities)
 
-set(CommonFlags 
-	-fno-strict-aliasing
+set(CommonFlags
     )
 
-#Clang doesn't support a few common flags that GCC does.
-if(NOT USE_CLANG)
-	set(UtilitiesFinalFlags
-		${UtilitiesFinalFlags}
-		${CommonFlags} -fno-guess-branch-probability -fno-dse -fno-tree-dse
-	)
-endif(NOT USE_CLANG) 
-
-# Debug - Build
-if(CMAKE_BUILD_TYPE STREQUAL Debug)
-	
-	# add defines
-	set(UtilitiesFinalFlags
-		${UtilitiesFinalFlags}
-		${CommonFlags} -DPCSX2_DEBUG -DPCSX2_DEVBUILD
-	)
-endif(CMAKE_BUILD_TYPE STREQUAL Debug)
-
-# Devel - Build
-if(CMAKE_BUILD_TYPE STREQUAL Devel)
-	
-	# add defines
-	set(UtilitiesFinalFlags
-		${UtilitiesFinalFlags}
-		${CommonFlags} -DPCSX2_DEVBUILD
-	)
-endif(CMAKE_BUILD_TYPE STREQUAL Devel)
-
-# Release - Build
-if(CMAKE_BUILD_TYPE STREQUAL Release)
-	
-	# add defines
-	set(UtilitiesFinalFlags
-		${UtilitiesFinalFlags}
-		${CommonFlags}
-	)
-endif(CMAKE_BUILD_TYPE STREQUAL Release)
+set(UtilitiesFinalFlags ${CommonFlags})
 
 # variable with all sources of this library
 set(UtilitiesSources
+	VirtualMemory.cpp
 	AlignedMalloc.cpp
 	../../include/Utilities/FixedPointTypes.inl
 	../../include/Utilities/EventSource.inl
@@ -65,23 +29,20 @@ set(UtilitiesSources
 	HashTools.cpp
 	IniInterface.cpp
 	Linux/LnxHostSys.cpp
-	Linux/LnxMisc.cpp
-	Linux/LnxThreads.cpp
 	Mutex.cpp
 	PathUtils.cpp
 	PrecompiledHeader.cpp
+	Perf.cpp
 	pxCheckBox.cpp
 	pxRadioPanel.cpp
 	pxStaticText.cpp
 	pxStreams.cpp
 	pxTranslate.cpp
 	pxWindowTextWriter.cpp
-	Semaphore.cpp
 	StringHelpers.cpp
 	ThreadingDialogs.cpp
 	ThreadTools.cpp
 	vssprintf.cpp
-	VirtualMemory.cpp
 	wxAppWithHelpers.cpp
 	wxGuiTools.cpp
 	wxHelpers.cpp
@@ -111,7 +72,6 @@ set(UtilitiesHeaders
 	../../include/Utilities/RedtapeWindows.h
 	../../include/Utilities/SafeArray.h
 	../../include/Utilities/ScopedAlloc.h
-	../../include/Utilities/ScopedPtr.h
 	../../include/Utilities/ScopedPtrMT.h
 	../../include/Utilities/StringHelpers.h
 	../../include/Utilities/Threading.h
@@ -120,7 +80,22 @@ set(UtilitiesHeaders
 	../../include/Utilities/wxAppWithHelpers.h
 	../../include/Utilities/wxBaseTools.h
 	../../include/Utilities/wxGuiTools.h
-	PrecompiledHeader.h)
+	PrecompiledHeader.h
+)
+
+if(APPLE)
+	LIST(APPEND UtilitiesSources
+		Darwin/DarwinThreads.cpp
+		Darwin/DarwinMisc.cpp
+		Darwin/DarwinSemaphore.cpp
+	)
+else()
+	LIST(APPEND UtilitiesSources
+		Linux/LnxThreads.cpp
+		Linux/LnxMisc.cpp
+		Semaphore.cpp
+	)
+endif()
 
 set(UtilitiesFinalSources
 	${UtilitiesSources}

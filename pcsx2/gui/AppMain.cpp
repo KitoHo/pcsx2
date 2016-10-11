@@ -41,24 +41,30 @@
 #endif
 
 #ifdef __WXGTK__
-
-#if wxMAJOR_VERSION < 3
-#include <wx/gtk/win_gtk.h> // GTK_PIZZA interface (internal include removed in 3.0)
-#endif
-
 #include <gdk/gdkx.h>
 #include <gtk/gtk.h>
 #endif
 
+// Safe to remove these lines when this is handled properly.
+#ifdef __WXMAC__
+// Great joy....
+#undef EBP
+#undef ESP
+#undef EDI
+#undef ESI
+#undef EDX
+#undef EAX
+#undef EBX
+#undef ECX
+#include <wx/osx/private.h>		// needed to implement the app!
+#endif
 
 IMPLEMENT_APP(Pcsx2App)
 
-DEFINE_EVENT_TYPE( pxEvt_LoadPluginsComplete );
-DEFINE_EVENT_TYPE( pxEvt_LogicalVsync );
+std::unique_ptr<AppConfig> g_Conf;
 
-DEFINE_EVENT_TYPE( pxEvt_ThreadTaskTimeout_SysExec );
-
-ScopedPtr<AppConfig>	g_Conf;
+AspectRatioType iniAR;
+bool switchAR;
 
 static bool HandlePluginError( BaseException& ex )
 {
@@ -204,7 +210,7 @@ void Pcsx2App::PostMenuAction( MenuIdentifiers menu_id ) const
 	MainEmuFrame* mainFrame = GetMainFramePtr();
 	if( mainFrame == NULL ) return;
 
-	wxCommandEvent joe( wxEVT_COMMAND_MENU_SELECTED, menu_id );
+	wxCommandEvent joe( wxEVT_MENU, menu_id );
 	if( wxThread::IsMain() )
 		mainFrame->GetEventHandler()->ProcessEvent( joe );
 	else
@@ -277,6 +283,8 @@ void Pcsx2App::PadKeyDispatch( const keyEvent& ev )
 //returns 0 for normal keys and a WXK_* value for special keys
 #ifdef __WXMSW__
 	const int vkey = TranslateVKToWXK(ev.key);
+#elif defined( __WXMAC__ )
+	const int vkey = wxCharCodeWXToOSX( (wxKeyCode) ev.key );
 #elif defined( __WXGTK__ )
 	const int vkey = TranslateGDKtoWXK( ev.key );
 #else
@@ -415,7 +423,7 @@ public:
 		return Path::Combine( GetDataDir(), L"Langs" );
 	}
 
-#ifdef __linux__
+#ifdef __POSIX__
 	wxString GetUserLocalDataDir() const
 	{
 		// I got memory corruption inside wxGetEnv when I heavily toggle the GS renderer (F9). It seems wxGetEnv
@@ -448,11 +456,7 @@ public:
 
 };
 
-#if wxMAJOR_VERSION < 3
-wxStandardPathsBase& Pcsx2AppTraits::GetStandardPaths()
-#else
 wxStandardPaths& Pcsx2AppTraits::GetStandardPaths()
-#endif
 {
 	static Pcsx2StandardPaths stdPaths;
 	return stdPaths;
@@ -514,11 +518,25 @@ extern bool FMVstarted;
 extern bool renderswitch;
 extern bool EnableFMV;
 
-void DoFmvSwitch()
+void DoFmvSwitch(bool on)
 {
-	ScopedCoreThreadPause paused_core( new SysExecEvent_SaveSinglePlugin(PluginId_GS) );
-	renderswitch = !renderswitch;
-	paused_core.AllowResume();
+	if (g_Conf->GSWindow.IsToggleAspectRatioSwitch) {
+		if (on) {
+			switchAR = true;
+			iniAR = g_Conf->GSWindow.AspectRatio;
+		} else {
+			switchAR = false;
+		}
+		if (GSFrame* gsFrame = wxGetApp().GetGsFramePtr())
+			if (GSPanel* viewport = gsFrame->GetViewport())
+				viewport->DoResize();
+	}
+
+	if (EmuConfig.Gamefixes.FMVinSoftwareHack) {
+		ScopedCoreThreadPause paused_core(new SysExecEvent_SaveSinglePlugin(PluginId_GS));
+		renderswitch = !renderswitch;
+		paused_core.AllowResume();
+	}
 }
 
 void Pcsx2App::LogicalVsync()
@@ -531,19 +549,19 @@ void Pcsx2App::LogicalVsync()
 
 	FpsManager.DoFrame();
 	
-	if (EmuConfig.Gamefixes.FMVinSoftwareHack) {
-		if (EnableFMV == 1) {
-			Console.Warning("FMV on");
-			DoFmvSwitch();
-			EnableFMV = 0;
+	if (EmuConfig.Gamefixes.FMVinSoftwareHack || g_Conf->GSWindow.IsToggleAspectRatioSwitch) {
+		if (EnableFMV) {
+			DevCon.Warning("FMV on");
+			DoFmvSwitch(true);
+			EnableFMV = false;
 		}
 
-		if (FMVstarted){
+		if (FMVstarted) {
 			int diff = cpuRegs.cycle - eecount_on_last_vdec;
 			if (diff > 60000000 ) {
-				Console.Warning("FMV off");
-				DoFmvSwitch();
-				FMVstarted = 0;
+				DevCon.Warning("FMV off");
+				DoFmvSwitch(false);
+				FMVstarted = false;
 			}
 		}
 	}
@@ -633,10 +651,10 @@ void Pcsx2App::HandleEvent(wxEvtHandler* handler, wxEventFunction func, wxEvent&
 		// PCSX2. This probably happened in the BIOS error case above as well.
 		// So the idea is to explicitly close the gsFrame before the modal MessageBox appears and
 		// intercepts the close message. Only for wx3.0 though - it sometimes breaks linux wx2.8.
-#if wxMAJOR_VERSION >= 3
+
 		if (GSFrame* gsframe = wxGetApp().GetGsFramePtr())
 			gsframe->Close();
-#endif
+
 		Console.Error(ex.FormatDiagnosticMessage());
 
 		// Make sure it terminates properly for nogui users.
@@ -889,7 +907,7 @@ void Pcsx2App::PostIdleAppMethod( FnPtr_Pcsx2App method )
 
 SysMainMemory& Pcsx2App::GetVmReserve()
 {
-	if (!m_VmReserve) m_VmReserve = new SysMainMemory();
+	if (!m_VmReserve) m_VmReserve = std::unique_ptr<SysMainMemory>(new SysMainMemory());
 	return *m_VmReserve;
 }
 
@@ -954,20 +972,12 @@ void Pcsx2App::OpenGsPanel()
 	// unfortunately it creates a gray box in the middle of the window on some
 	// users.
 
-#if wxMAJOR_VERSION < 3
-	GtkWidget *child_window = gtk_bin_get_child(GTK_BIN(gsFrame->GetViewport()->GetHandle()));
-#else
 	GtkWidget *child_window = GTK_WIDGET(gsFrame->GetViewport()->GetHandle());
-#endif
 
 	gtk_widget_realize(child_window); // create the widget to allow to use GDK_WINDOW_* macro
 	gtk_widget_set_double_buffered(child_window, false); // Disable the widget double buffer, you will use the opengl one
 
-#if wxMAJOR_VERSION < 3
-	GdkWindow* draw_window = GTK_PIZZA(child_window)->bin_window;
-#else
 	GdkWindow* draw_window = gtk_widget_get_window(child_window);
-#endif
 
 #if GTK_MAJOR_VERSION < 3
 	Window Xwindow = GDK_WINDOW_XWINDOW(draw_window);

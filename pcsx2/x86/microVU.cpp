@@ -18,6 +18,8 @@
 #include "PrecompiledHeader.h"
 #include "microVU.h"
 
+#include "Utilities/Perf.h"
+
 //------------------------------------------------------------------
 // Micro VU - Main Functions
 //------------------------------------------------------------------
@@ -65,7 +67,7 @@ void mVUinit(microVU& mVU, uint vuIndex) {
 	if (!mVU.dispCache) throw Exception::OutOfMemory (mVU.index ? L"Micro VU1 Dispatcher" : L"Micro VU0 Dispatcher");
 	memset(mVU.dispCache, 0xcc, mVUdispCacheSize);
 
-	mVU.regAlloc = new microRegAlloc(mVU.index);
+	mVU.regAlloc.reset(new microRegAlloc(mVU.index));
 }
 
 // Resets Rec Data
@@ -73,12 +75,13 @@ void mVUreset(microVU& mVU, bool resetReserve) {
 
 	// Restore reserve to uncommitted state
 	if (resetReserve) mVU.cache_reserve->Reset();
+
+	if (mVU.index) Perf::any.map((uptr)&mVU.dispCache, mVUdispCacheSize, "mVU1 Dispatcher");
+	else           Perf::any.map((uptr)&mVU.dispCache, mVUdispCacheSize, "mVU0 Dispatcher");
 	
 	x86SetPtr(mVU.dispCache);
-	mVUdispatcherA(mVU);
-	mVUdispatcherB(mVU);
-	mVUdispatcherC(mVU);
-	mVUdispatcherD(mVU);
+	mVUdispatcherAB(mVU);
+	mVUdispatcherCD(mVU);
 	mVUemitSearch();
 
 	// Clear All Program Data
@@ -188,16 +191,20 @@ __ri void mVUcacheProg(microVU& mVU, microProgram& prog) {
 
 // Generate Hash for partial program based on compiled ranges...
 u64 mVUrangesHash(microVU& mVU, microProgram& prog) {
-	u32 hash[2] = {0, 0};
+	union {
+		u64 v64;
+		u32 v32[2];
+	} hash = {0};
+
 	std::deque<microRange>::const_iterator it(prog.ranges->begin());
 	for ( ; it != prog.ranges->end(); ++it) {
 		if((it[0].start<0)||(it[0].end<0))  { DevCon.Error("microVU%d: Negative Range![%d][%d]", mVU.index, it[0].start, it[0].end); }
 		for(int i = it[0].start/4; i < it[0].end/4; i++) {
-			hash[0] -= prog.data[i];
-			hash[1] ^= prog.data[i];
+			hash.v32[0] -= prog.data[i];
+			hash.v32[1] ^= prog.data[i];
 		}
 	}
-	return *(u64*)hash;
+	return hash.v64;
 }
 
 // Prints the ratio of unique programs to total programs
@@ -250,7 +257,16 @@ _mVUt __fi void* mVUsearchProg(u32 startPC, uptr pState) {
 	if(!quick.prog) { // If null, we need to search for new program
 		std::deque<microProgram*>::iterator it(list->begin());
 		for ( ; it != list->end(); ++it) {
-			if (mVUcmpProg(mVU, *it[0], 0)) {
+			bool b = mVUcmpProg(mVU, *it[0], 0);
+			if (EmuConfig.Gamefixes.ScarfaceIbit) {
+				if (isVU1 && ((((u32*)mVU.regs().Micro)[startPC / 4 + 1]) == 0x80200118) && ((((u32*)mVU.regs().Micro)[startPC / 4 + 3]) == 0x81000062)) {
+					b = true;
+					mVU.prog.cleared = 0;
+					mVU.prog.cur = it[0];
+					mVU.prog.isSame = 1;
+				}
+			}
+			if (b) {
 				quick.block = it[0]->block[startPC/8];
 				quick.prog  = it[0];
 				list->erase(it);
@@ -285,22 +301,22 @@ void recMicroVU0::Vsync() throw() { mVUvsyncUpdate(microVU0); }
 void recMicroVU1::Vsync() throw() { mVUvsyncUpdate(microVU1); }
 
 void recMicroVU0::Reserve() {
-	if (AtomicExchange(m_Reserved, 1) == 0)
+	if (m_Reserved.exchange(1) == 0)
 		mVUinit(microVU0, 0);
 }
 void recMicroVU1::Reserve() {
-	if (AtomicExchange(m_Reserved, 1) == 0) {
+	if (m_Reserved.exchange(1) == 0) {
 		mVUinit(microVU1, 1);
 		vu1Thread.Start();
 	}
 }
 
 void recMicroVU0::Shutdown() throw() {
-	if (AtomicExchange(m_Reserved, 0) == 1)
+	if (m_Reserved.exchange(0) == 1)
 		mVUclose(microVU0);
 }
 void recMicroVU1::Shutdown() throw() {
-	if (AtomicExchange(m_Reserved, 0) == 1) {
+	if (m_Reserved.exchange(0) == 1) {
 		vu1Thread.WaitVU();
 		mVUclose(microVU1);
 	}

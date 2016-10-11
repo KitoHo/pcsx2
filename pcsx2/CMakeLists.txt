@@ -22,34 +22,18 @@ set(CommonFlags
     -DWX_PRECOMP
 	)
 
-#Clang doesn't support a few common flags that GCC does.
-if(NOT USE_CLANG)
-	set(pcsx2FinalFlags ${CommonFlags} -fno-guess-branch-probability -fno-dse -fno-tree-dse)
-endif()
-
 if ("${PGO}" STREQUAL "generate")
-    set(pcsx2FinalFlags ${pcsx2FinalFlags} -fprofile-generate)
+    set(pcsx2FinalFlags -fprofile-generate)
 elseif("${PGO}" STREQUAL "use")
-    set(pcsx2FinalFlags ${pcsx2FinalFlags} -fprofile-use)
+    set(pcsx2FinalFlags -fprofile-use)
+else()
+    set(pcsx2FinalFlags "")
 endif()
 
-# Debug - Build
-if(CMAKE_BUILD_TYPE STREQUAL Debug)
-	set(pcsx2FinalFlags ${pcsx2FinalFlags} ${CommonFlags} -DPCSX2_DEVBUILD -DPCSX2_DEBUG)
-
-elseif(CMAKE_BUILD_TYPE STREQUAL Devel)
-	set(pcsx2FinalFlags ${pcsx2FinalFlags} ${CommonFlags} -DPCSX2_DEVBUILD)
-
-elseif(CMAKE_BUILD_TYPE STREQUAL Release)
-	set(pcsx2FinalFlags ${pcsx2FinalFlags} ${CommonFlags})
-
-endif()
+set(pcsx2FinalFlags ${pcsx2FinalFlags} ${CommonFlags})
 
 if(XDG_STD)
-    set(pcsx2FinalFlags
-		${pcsx2FinalFlags}
-		-DXDG_STD
-	)
+    set(pcsx2FinalFlags ${pcsx2FinalFlags} -DXDG_STD)
 endif()
 
 set(Output PCSX2)
@@ -66,7 +50,7 @@ set(pcsx2Sources
 	FiFo.cpp
 	FPU.cpp
 	Gif.cpp
-    Gif_Logger.cpp
+	Gif_Logger.cpp
 	Gif_Unit.cpp
 	GS.cpp
 	GSState.cpp
@@ -77,17 +61,18 @@ set(pcsx2Sources
 	IopBios.cpp
 	IopCounters.cpp
 	IopDma.cpp
+	IopGte.cpp
 	IopHw.cpp
 	IopIrq.cpp
 	IopMem.cpp
 	IopSio2.cpp
-#	Mdec.cpp
+	Mdec.cpp
 	Memory.cpp
 	MMI.cpp
 	MTGS.cpp
-    MTVU.cpp
-    MultipartFileReader.cpp
-    OutputIsoFile.cpp
+	MTVU.cpp
+	MultipartFileReader.cpp
+	OutputIsoFile.cpp
 	Patch.cpp
 	Patch_Memory.cpp
 	Pcsx2Config.cpp
@@ -147,12 +132,13 @@ set(pcsx2Headers
 	IopBios.h
 	IopCommon.h
 	IopCounters.h
-	IopDma.h
+	IopDma.h	
+	IopGte.h
 	IopHw.h
 	IopMem.h
 	IopSio2.h
-#	Mdec.h
-    MTVU.h
+	Mdec.h
+	MTVU.h
 	Memory.h
 	MemoryTypes.h
 	NakedAsm.h
@@ -164,7 +150,6 @@ set(pcsx2Headers
 	R5900Exceptions.h
 	R5900.h
 	R5900OpcodeTables.h
-	SamplProf.h
 	SaveState.h
 	Sifcmd.h
 	Sif.h
@@ -315,7 +300,6 @@ set(pcsx2GuiSources
 	gui/Panels/PluginSelectorPanel.cpp
 	gui/Panels/SpeedhacksPanel.cpp
 	gui/Panels/VideoPanel.cpp
-	gui/pxLogTextCtrl.cpp
 	gui/RecentIsoList.cpp
 	gui/Saveslots.cpp
 	gui/SysState.cpp
@@ -405,6 +389,18 @@ set(pcsx2LinuxSources
     Linux/LnxFlatFileReader.cpp
     )
 
+set(pcsx2OSXSources
+#	Linux/LnxConsolePipe.cpp
+#	Linux/LnxKeyCodes.cpp
+	Darwin/DarwinFlatFileReader.cpp
+	)
+
+set(pcsx2FreeBSDSources
+	Linux/LnxConsolePipe.cpp
+	Linux/LnxKeyCodes.cpp
+	Darwin/DarwinFlatFileReader.cpp
+	)
+
 # Linux headers
 set(pcsx2LinuxHeaders
 	)
@@ -412,6 +408,7 @@ set(pcsx2LinuxHeaders
 # ps2 sources
 set(pcsx2ps2Sources
 	ps2/BiosTools.cpp
+	ps2/pgif.cpp
 	ps2/LegacyDmac.cpp
 	ps2/Iop/IopHwRead.cpp
 	ps2/Iop/IopHwWrite.cpp)
@@ -420,6 +417,7 @@ set(pcsx2ps2Sources
 set(pcsx2ps2Headers
 	ps2/BiosTools.h
 	ps2/eeHwTraceLog.inl
+	ps2/pgif.h
 	ps2/HwInternal.h
 	ps2/Iop/IopHw_Internal.h)
 
@@ -478,7 +476,6 @@ set(pcsx2WindowsSources
 	windows/DwmSetup.cpp
 	windows/ini.cpp
 	windows/PatchBrowser.cpp
-	windows/SampleProf.cp
 	windows/WinCompressNTFS.cpp
 	windows/WinConsolePipe.cpp
 	windows/WinSysExec.cpp)
@@ -498,7 +495,6 @@ set(pcsx2x86Sources
 	x86/iFPUd.cpp
 	x86/iMisc.cpp
 	x86/iMMI.cpp
-	x86/iPsxMem.cpp
 	x86/iR3000A.cpp
 	x86/iR3000Atables.cpp
 	x86/iR5900Misc.cpp
@@ -568,11 +564,6 @@ set(pcsx2x86Headers
 	x86/newVif_UnpackSSE.h
 	)
 
-# colect .asm files
-set(pcsx2AsmFiles
-	IPU/yuv2rgb.asm
-	x86/ix86-32/aVif_proc-32.asm)
-
 # collect .S files
 if (NOT DISABLE_SVU)
     set(pcsx2SSources x86/aVUzerorec.S)
@@ -591,7 +582,7 @@ set(Common
 	${pcsx2CDVDHeaders}
 	${pcsx2DebugToolsSources}
 	${pcsx2GuiSources}
-    ${pcsx2GuiResources}
+	${pcsx2GuiResources}
 	${pcsx2GuiHeaders}
 	${pcsx2IPUSources}
 	${pcsx2IPUHeaders}
@@ -623,9 +614,16 @@ if(Windows)
 endif()
 
 # MacOSX
-if(MacOSX)
+if(APPLE)
 	set(Platform
-		)
+		${pcsx2OSXSources}
+		${pcsx2LinuxHeaders})
+endif()
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
+	set(Platform
+		${pcsx2FreeBSDSources}
+		${pcsx2LinuxHeaders})
 endif()
 
 set(pcsx2FinalSources
@@ -642,6 +640,28 @@ set(pcsx2FinalLibs
     ${AIO_LIBRARIES}
     ${GCOV_LIBRARIES}
 )
+
+if(BUILTIN_GS)
+    set(pcsx2FinalLibs "${pcsx2FinalLibs} GSdx")
+endif()
+if(BUILTIN_PAD)
+    set(pcsx2FinalLibs "${pcsx2FinalLibs} onepad-1.2.0")
+endif()
+if(BUILTIN_SPU2)
+    set(pcsx2FinalLibs "${pcsx2FinalLibs} spu2x-2.0.0")
+endif()
+if(BUILTIN_USB)
+    set(pcsx2FinalLibs "${pcsx2FinalLibs} USBnull-0.7.0")
+endif()
+if(BUILTIN_FW)
+    set(pcsx2FinalLibs "${pcsx2FinalLibs} FWnull-0.7.0")
+endif()
+if(BUILTIN_DEV)
+    set(pcsx2FinalLibs "${pcsx2FinalLibs} dev9null-0.5.0")
+endif()
+if(BUILTIN_CDVD)
+    set(pcsx2FinalLibs "${pcsx2FinalLibs} CDVDnull")
+endif()
 
 # additonal include directories
 include_directories(

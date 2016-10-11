@@ -24,7 +24,7 @@
 #include "GSVector.h"
 #include "GSPng.h"
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include "GSCaptureDlg.h"
 #endif
 
@@ -37,14 +37,15 @@ class GSCapture
 	std::string m_out_dir;
 	int m_threads;
 
-	#ifdef _WINDOWS
+	#ifdef _WIN32
 
 	CComPtr<IGraphBuilder> m_graph;
 	CComPtr<IBaseFilter> m_src;
 
-	#elif __linux__
+	#elif defined(__unix__)
 
 	vector<GSPng::Worker*> m_workers;
+	int m_compression_level;
 
 	#endif
 

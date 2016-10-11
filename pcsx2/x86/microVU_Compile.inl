@@ -107,16 +107,21 @@ __ri void flushRegs(mV) { if (!doRegAlloc) mVU.regAlloc->flushAll(); }
 void doIbit(mV) { 
 	if (mVUup.iBit) { 
 		incPC(-1);
-		u32 tempI;
 		mVU.regAlloc->clearRegVF(33);
-
-		if (CHECK_VU_OVERFLOW && ((curI & 0x7fffffff) >= 0x7f800000)) {
-			DevCon.WriteLn(Color_Green,"microVU%d: Clamping I Reg", mVU.index);
-			tempI = (0x80000000 & curI) | 0x7f7fffff; // Clamp I Reg
+		if (EmuConfig.Gamefixes.ScarfaceIbit) {
+			xMOV(gprT1, ptr32[&curI]);
+			xMOV(ptr32[&mVU.getVI(REG_I)], gprT1);
 		}
-		else tempI = curI;
-		
-		xMOV(ptr32[&mVU.getVI(REG_I)], tempI);
+		else {
+			u32 tempI;
+			if (CHECK_VU_OVERFLOW && ((curI & 0x7fffffff) >= 0x7f800000)) {
+				DevCon.WriteLn(Color_Green, "microVU%d: Clamping I Reg", mVU.index);
+				tempI = (0x80000000 & curI) | 0x7f7fffff; // Clamp I Reg
+			}
+			else tempI = curI;
+
+			xMOV(ptr32[&mVU.getVI(REG_I)], tempI);
+		}
 		incPC(1);
 	} 
 }
@@ -194,10 +199,8 @@ __fi void handleBadOp(mV, int count) {
 #ifdef PCSX2_DEVBUILD
 	if (mVUinfo.isBadOp) {
 		mVUbackupRegs(mVU, true);
-		xMOV(gprT2, mVU.prog.cur->idx);
-		xMOV(gprT3, xPC);
-		if (!isVU1) xCALL(mVUbadOp0);
-		else		xCALL(mVUbadOp1);
+		if (!isVU1) xFastCall(mVUbadOp0, mVU.prog.cur->idx, xPC);
+		else		xFastCall(mVUbadOp1, mVU.prog.cur->idx, xPC);
 		mVUrestoreRegs(mVU, true);
 	}
 #endif
@@ -345,9 +348,8 @@ void mVUsetCycles(mV) {
 void mVUdebugPrintBlocks(microVU& mVU, bool isEndPC) {
 	if (mVUdebugNow) {
 		mVUbackupRegs(mVU, true);
-		xMOV(gprT2, xPC);
-		if (isEndPC) xCALL(mVUprintPC2);
-		else		 xCALL(mVUprintPC1);
+		if (isEndPC) xFastCall(mVUprintPC2, xPC);
+		else		 xFastCall(mVUprintPC1, xPC);
 		mVUrestoreRegs(mVU, true);
 	}
 }
@@ -375,9 +377,7 @@ void mVUtestCycles(microVU& mVU) {
 			// TEST32ItoM((uptr)&mVU.regs().flags, VUFLAG_MFLAGSET);
 			// xFowardJZ32 vu0jmp;
 			// mVUbackupRegs(mVU, true);
-			// xMOV(gprT2, mVU.prog.cur->idx);
-			// xMOV(gprT3, xPC);
-			// xCALL(mVUwarning0); // VU0 is allowed early exit for COP2 Interlock Simulation
+			// xFastCall(mVUwarning0, mVU.prog.cur->idx, xPC); // VU0 is allowed early exit for COP2 Interlock Simulation
 			// mVUrestoreRegs(mVU, true);
 			mVUsavePipelineState(mVU);
 			mVUendProgram(mVU, NULL, 0);
@@ -385,9 +385,7 @@ void mVUtestCycles(microVU& mVU) {
 		}
 		else {
 			mVUbackupRegs(mVU, true);
-			xMOV(gprT2, mVU.prog.cur->idx);
-			xMOV(gprT3, xPC);
-			xCALL(mVUwarning1);
+			xFastCall(mVUwarning1, mVU.prog.cur->idx, xPC);
 			mVUrestoreRegs(mVU, true);
 			mVUsavePipelineState(mVU);
 			mVUendProgram(mVU, NULL, 0);

@@ -30,13 +30,13 @@
 class GSOffset : public GSAlignedClass<32>
 {
 public:
-	__aligned(struct, 32) Block
+	struct alignas(32) Block
 	{
 		short row[256]; // yn (n = 0 8 16 ...)
 		short* col; // blockOffset*
 	};
 	
-	__aligned(struct, 32) Pixel
+	struct alignas(32) Pixel
 	{
 		int row[4096]; // yn (n = 0 1 2 ...) NOTE: this wraps around above 2048, only transfers should address the upper half (dark cloud 2 inventing)
 		int* col[8]; // rowOffset*
@@ -46,6 +46,8 @@ public:
 
 	Block block;
 	Pixel pixel;
+
+	uint32* coverages[256]; // texture page coverage based on the texture size. Lazy allocated
 
 	GSOffset(uint32 bp, uint32 bw, uint32 psm);
 	virtual ~GSOffset();
@@ -93,7 +95,7 @@ public:
 	typedef void (GSLocalMemory::*readTexture)(const GSOffset* RESTRICT off, const GSVector4i& r, uint8* dst, int dstpitch, const GIFRegTEXA& TEXA);
 	typedef void (GSLocalMemory::*readTextureBlock)(uint32 bp, uint8* dst, int dstpitch, const GIFRegTEXA& TEXA) const;
 
-	__aligned(struct, 128) psm_t
+	struct alignas(128) psm_t
 	{
 		pixelAddress pa, bn;
 		readPixel rp;
@@ -111,7 +113,7 @@ public:
 		GSVector2i bs, pgs;
 		int* rowOffset[8];
 		short* blockOffset;
-		uint8 msk;
+		uint8 msk, depth;
 	};
 
 	static psm_t m_psm[64];
@@ -874,6 +876,7 @@ public:
 	// * => 32
 
 	void ReadTexture32(const GSOffset* RESTRICT off, const GSVector4i& r, uint8* dst, int dstpitch, const GIFRegTEXA& TEXA);
+	void ReadTextureGPU24(const GSOffset* RESTRICT off, const GSVector4i& r, uint8* dst, int dstpitch, const GIFRegTEXA& TEXA);
 	void ReadTexture24(const GSOffset* RESTRICT off, const GSVector4i& r, uint8* dst, int dstpitch, const GIFRegTEXA& TEXA);
 	void ReadTexture16(const GSOffset* RESTRICT off, const GSVector4i& r, uint8* dst, int dstpitch, const GIFRegTEXA& TEXA);
 	void ReadTexture8(const GSOffset* RESTRICT off, const GSVector4i& r, uint8* dst, int dstpitch, const GIFRegTEXA& TEXA);

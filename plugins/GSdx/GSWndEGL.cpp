@@ -22,7 +22,7 @@
 #include "stdafx.h"
 #include "GSWndEGL.h"
 
-#if defined(__linux__) && defined(EGL_SUPPORTED)
+#if defined(__unix__) && defined(EGL_SUPPORTED)
 
 GSWndEGL::GSWndEGL()
 	: m_NativeWindow(0), m_NativeDisplay(NULL)
@@ -39,6 +39,9 @@ void GSWndEGL::CreateContext(int major, int minor)
 		EGL_CONTEXT_MINOR_VERSION_KHR, minor,
 #ifdef ENABLE_OGL_DEBUG
 		EGL_CONTEXT_FLAGS_KHR, EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR,
+#else
+		// Open Source isn't happy with an unsupported flags...
+		//EGL_CONTEXT_FLAGS_KHR, GL_CONTEXT_FLAG_NO_ERROR_BIT_KHR,
 #endif
 		EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
 		EGL_NONE
@@ -161,8 +164,8 @@ bool GSWndEGL::Create(const string& title, int w, int h)
 		throw GSDXRecoverableError();
 
 	if(w <= 0 || h <= 0) {
-		w = theApp.GetConfig("ModeWidth", 640);
-		h = theApp.GetConfig("ModeHeight", 480);
+		w = theApp.GetConfigI("ModeWidth");
+		h = theApp.GetConfigI("ModeHeight");
 	}
 
 	m_managed = true;

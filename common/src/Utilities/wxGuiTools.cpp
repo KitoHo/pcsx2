@@ -562,7 +562,7 @@ void ScopedBusyCursor::SetManualBusyCursor( BusyCursorType busytype )
 const wxCursor& MoreStockCursors::GetArrowWait()
 {
 	if( !m_arrowWait )
-		m_arrowWait = new wxCursor( wxCURSOR_ARROWWAIT );
+		m_arrowWait = std::unique_ptr<wxCursor>(new wxCursor( wxCURSOR_ARROWWAIT ));
 	return *m_arrowWait;
 }
 
@@ -593,10 +593,10 @@ void pxSetToolTip( wxWindow& wind, const wxString& src )
 }
 
 
-wxFont pxGetFixedFont( int ptsize, int weight )
+wxFont pxGetFixedFont( int ptsize, wxFontWeight weight )
 {
 	return wxFont(
-		ptsize, wxMODERN, wxNORMAL, weight, false
+		ptsize, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, weight, false
 #ifdef __WXMSW__
 		,L"Lucida Console"		// better than courier new (win32 only)
 #endif

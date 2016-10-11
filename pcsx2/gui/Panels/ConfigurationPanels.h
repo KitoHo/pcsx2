@@ -23,6 +23,7 @@
 
 #include <wx/statline.h>
 #include <wx/dnd.h>
+#include <memory>
 
 #include "AppCommon.h"
 #include "ApplyState.h"
@@ -177,7 +178,7 @@ namespace Panels
 		pxRadioPanel*		m_panel_RecIOP;
 		pxCheckBox*			m_check_EECacheEnable;
 		AdvancedOptionsFPU*	m_advancedOptsFpu;
-		wxButton *m_button_RestoreDefaults;
+		wxButton*			m_button_RestoreDefaults;
 
 	public:
 		CpuPanelEE( wxWindow* parent );
@@ -189,6 +190,7 @@ namespace Panels
 
 	protected:
 		void OnRestoreDefaults( wxCommandEvent& evt );
+		void EECache_Event( wxCommandEvent& evt );
 	};
 
 	class CpuPanelVU : public BaseApplicableConfigPanel_SpecificConfig
@@ -284,6 +286,7 @@ namespace Panels
 
 		pxCheckBox*		m_check_HideMouse;
 		pxCheckBox*		m_check_DclickFullscreen;
+		pxCheckBox*		m_check_AspectRatioSwitch;
 
 		wxTextCtrl*		m_text_WindowWidth;
 		wxTextCtrl*		m_text_WindowHeight;
@@ -406,6 +409,10 @@ namespace Panels
 		void PopulateFields( const wxString& serial=wxEmptyString );
 		bool WriteFieldsToDB();
 		void Search_Click( wxCommandEvent& evt );
+
+	private:
+		void placeTextBox(wxFlexGridSizer& sizer1, wxTextCtrl* wxBox, const wxString& txt);
+		void blankLine(wxFlexGridSizer& sizer1);
 	};
 
 	class SettingsDirPickerPanel : public DirPickerPanel
@@ -492,9 +499,9 @@ namespace Panels
 		typedef BaseSelectorPanel _parent;
 
 	protected:
-		ScopedPtr<wxArrayString>	m_ThemeList;
-		wxListBox*					m_ComboBox;
-		DirPickerPanel*				m_FolderPicker;
+		std::unique_ptr<wxArrayString> m_ThemeList;
+		wxListBox* m_ComboBox;
+		DirPickerPanel* m_FolderPicker;
 
 	public:
 		virtual ~ThemeSelectorPanel() throw();
@@ -513,9 +520,9 @@ namespace Panels
 	class BiosSelectorPanel : public BaseSelectorPanel
 	{
 	protected:
-		ScopedPtr<wxArrayString>	m_BiosList;
-		wxListBox*					m_ComboBox;
-		DirPickerPanel*				m_FolderPicker;
+		std::unique_ptr<wxArrayString> m_BiosList;
+		wxListBox* m_ComboBox;
+		DirPickerPanel* m_FolderPicker;
 
 	public:
 		BiosSelectorPanel( wxWindow* parent );
@@ -620,8 +627,8 @@ namespace Panels
 		ComboBoxPanel*	m_ComponentBoxes;
 		bool			m_Canceled;
 
-		ScopedPtr<wxArrayString>	m_FileList;	// list of potential plugin files
-		ScopedPtr<EnumThread>		m_EnumeratorThread;
+		std::unique_ptr<wxArrayString>	m_FileList;	// list of potential plugin files
+		std::unique_ptr<EnumThread>		m_EnumeratorThread;
 
 	public:
 		virtual ~PluginSelectorPanel() throw();

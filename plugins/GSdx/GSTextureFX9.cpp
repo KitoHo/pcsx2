@@ -75,7 +75,7 @@ void GSDevice9::SetupVS(VSSelector sel, const VSConstantBuffer* cb)
 		str[3] = format("%d", sel.logz);
 		str[4] = format("%d", sel.rtcopy);
 
-		D3DXMACRO macro[] =
+		D3D_SHADER_MACRO macro[] =
 		{
 			{"VS_BPPZ", str[0].c_str()},
 			{"VS_TME", str[1].c_str()},
@@ -98,7 +98,7 @@ void GSDevice9::SetupVS(VSSelector sel, const VSConstantBuffer* cb)
 
 		vector<unsigned char> shader;
 		theApp.LoadResource(IDR_TFX_FX, shader);
-		CompileShader((const char *)shader.data(), shader.size(), "vs_main", macro, &vs.vs, layout, countof(layout), &vs.il);
+		CompileShader((const char *)shader.data(), shader.size(), "tfx.fx", "vs_main", macro, &vs.vs, layout, countof(layout), &vs.il);
 
 		m_vs[sel] = vs;
 
@@ -157,7 +157,7 @@ void GSDevice9::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSel
 		str[15] = format("%d", sel.tcoffsethack);
 		str[16] = format("%d", sel.point_sampler);
 
-		D3DXMACRO macro[] =
+		D3D_SHADER_MACRO macro[] =
 		{
 			{"PS_FST", str[0].c_str()},
 			{"PS_WMS", str[1].c_str()},
@@ -183,7 +183,7 @@ void GSDevice9::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSel
 
 		vector<unsigned char> shader;
 		theApp.LoadResource(IDR_TFX_FX, shader);
-		CompileShader((const char *)shader.data(), shader.size(), "ps_main", macro, &ps);
+		CompileShader((const char *)shader.data(), shader.size(), "tfx.fx", "ps_main", macro, &ps);
 
 		m_ps[sel] = ps;
 
@@ -213,8 +213,8 @@ void GSDevice9::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSel
 
 			memset(ss, 0, sizeof(*ss));
 
-			ss->Anisotropic[0] = theApp.GetConfig("MaxAnisotropy", 0) && !theApp.GetConfig("paltex", 0) ? D3DTEXF_ANISOTROPIC : D3DTEXF_LINEAR;
-			ss->Anisotropic[1] = theApp.GetConfig("MaxAnisotropy", 0) && !theApp.GetConfig("paltex", 0) ? D3DTEXF_ANISOTROPIC : D3DTEXF_POINT;
+			ss->Anisotropic[0] = theApp.GetConfigI("MaxAnisotropy") && !theApp.GetConfigB("paltex") ? D3DTEXF_ANISOTROPIC : D3DTEXF_LINEAR;
+			ss->Anisotropic[1] = theApp.GetConfigI("MaxAnisotropy") && !theApp.GetConfigB("paltex") ? D3DTEXF_ANISOTROPIC : D3DTEXF_POINT;
 			ss->FilterMin[0] = ssel.ltf ? ss->Anisotropic[0] : D3DTEXF_POINT;
 			ss->FilterMag[0] = ssel.ltf ? ss->Anisotropic[0] : D3DTEXF_POINT;
 			ss->FilterMip[0] = ssel.ltf ? ss->Anisotropic[0] : D3DTEXF_POINT;
@@ -223,7 +223,7 @@ void GSDevice9::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSel
 			ss->FilterMip[1] = ss->Anisotropic[1];
 			ss->AddressU = ssel.tau ? D3DTADDRESS_WRAP : D3DTADDRESS_CLAMP;
 			ss->AddressV = ssel.tav ? D3DTADDRESS_WRAP : D3DTADDRESS_CLAMP;
-			ss->MaxAnisotropy = theApp.GetConfig("MaxAnisotropy", 0);
+			ss->MaxAnisotropy = theApp.GetConfigI("MaxAnisotropy");
 			ss->MaxLOD = ULONG_MAX;
 
 

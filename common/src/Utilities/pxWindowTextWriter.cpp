@@ -33,7 +33,7 @@ void pxWindowTextWriter::OnFontChanged()
 {
 }
 
-pxWindowTextWriter& pxWindowTextWriter::SetWeight( int weight )
+pxWindowTextWriter& pxWindowTextWriter::SetWeight( wxFontWeight weight )
 {
 	wxFont curfont( m_dc.GetFont() );
 	curfont.SetWeight( weight );
@@ -42,7 +42,7 @@ pxWindowTextWriter& pxWindowTextWriter::SetWeight( int weight )
 	return *this;
 }
 
-pxWindowTextWriter& pxWindowTextWriter::SetStyle( int style )
+pxWindowTextWriter& pxWindowTextWriter::SetStyle( wxFontStyle style )
 {
 	wxFont curfont( m_dc.GetFont() );
 	curfont.SetStyle( style );
@@ -53,8 +53,8 @@ pxWindowTextWriter& pxWindowTextWriter::SetStyle( int style )
 pxWindowTextWriter& pxWindowTextWriter::Normal()
 {
 	wxFont curfont( m_dc.GetFont() );
-	curfont.SetStyle( wxNORMAL );
-	curfont.SetWeight( wxNORMAL );
+	curfont.SetStyle( wxFONTSTYLE_NORMAL );
+	curfont.SetWeight( wxFONTWEIGHT_NORMAL );
 	m_dc.SetFont( curfont );
 
 	return *this;
@@ -106,12 +106,10 @@ void pxWindowTextWriter::_DoWriteLn( const wxChar* msg )
 	m_curpos.y += tHeight + m_leading;
 }
 
-#if wxMAJOR_VERSION >= 3
 void pxWindowTextWriter::_DoWriteLn( const wxString msg )
 {
 	_DoWriteLn(msg.wc_str());
 }
-#endif
 
 // Splits incoming multi-line strings into pieces, and dispatches each line individually
 // to the text writer.
@@ -160,10 +158,8 @@ pxWindowTextWriter& pxWindowTextWriter::FormatLn( const wxChar* fmt, ... )
 	return *this;
 }
 
-#if wxMAJOR_VERSION >= 3
 pxWindowTextWriter& pxWindowTextWriter::WriteLn( const wxString fmt )
 {
 	_DoWrite( fmt.wc_str() );
 	return *this;
 }
-#endif

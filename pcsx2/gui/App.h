@@ -19,6 +19,7 @@
 
 #include <wx/fileconf.h>
 #include <wx/apptrait.h>
+#include <memory>
 
 #include "pxEventThread.h"
 
@@ -34,12 +35,7 @@ class DisassemblyDialog;
 typedef void FnType_OnThreadComplete(const wxCommandEvent& evt);
 typedef void (Pcsx2App::*FnPtr_Pcsx2App)();
 
-BEGIN_DECLARE_EVENT_TYPES()
-	DECLARE_EVENT_TYPE( pxEvt_LoadPluginsComplete, -1 )
-	DECLARE_EVENT_TYPE( pxEvt_LogicalVsync, -1 )
-	DECLARE_EVENT_TYPE( pxEvt_ThreadTaskTimeout_SysExec, -1 )
-	DECLARE_EVENT_TYPE( pxEvt_SetSettingsPage, -1 )
-END_DECLARE_EVENT_TYPES()
+wxDECLARE_EVENT(pxEvt_SetSettingsPage, wxCommandEvent);
 
 // This is used when the GS plugin is handling its own window.  Messages from the PAD
 // are piped through to an app-level message handler, which dispatches them through
@@ -241,12 +237,12 @@ class pxAppResources
 public:
 	AppImageIds					ImageId;
 
-	ScopedPtr<wxImageList>		ConfigImages;
-	ScopedPtr<wxImageList>		ToolbarImages;
-	ScopedPtr<wxIconBundle>		IconBundle;
-	ScopedPtr<wxBitmap>			Bitmap_Logo;
-	ScopedPtr<wxBitmap>			ScreenshotBitmap;
-	ScopedPtr<AppGameDatabase>	GameDB;
+	std::unique_ptr<wxImageList>		ConfigImages;
+	std::unique_ptr<wxImageList>		ToolbarImages;
+	std::unique_ptr<wxIconBundle>		IconBundle;
+	std::unique_ptr<wxBitmap>			Bitmap_Logo;
+	std::unique_ptr<wxBitmap>			ScreenshotBitmap;
+	std::unique_ptr<AppGameDatabase>	GameDB;
 
 	pxAppResources();
 	virtual ~pxAppResources() throw();
@@ -298,6 +294,7 @@ public:
 	// Indicates if PCSX2 should autorun the configured CDVD source and/or ISO file.
 	bool			SysAutoRun;
 	bool			SysAutoRunElf;
+	bool			SysAutoRunIrx;
 
 	StartupOptions()
 	{
@@ -307,6 +304,7 @@ public:
 		NoFastBoot				= false;
 		SysAutoRun				= false;
 		SysAutoRunElf			= false;
+		SysAutoRunIrx			= false;
 		CdvdSource				= CDVDsrc_NoDisc;
 	}
 };
@@ -467,28 +465,28 @@ protected:
 
 public:
 	FramerateManager				FpsManager;
-	ScopedPtr<CommandDictionary>	GlobalCommands;
-	ScopedPtr<AcceleratorDictionary> GlobalAccels;
+	std::unique_ptr<CommandDictionary> GlobalCommands;
+	std::unique_ptr<AcceleratorDictionary> GlobalAccels;
 
 	StartupOptions					Startup;
 	CommandlineOverrides			Overrides;
 
-	ScopedPtr<wxTimer>				m_timer_Termination;
+	std::unique_ptr<wxTimer> m_timer_Termination;
 
 protected:
-	ScopedPtr<PipeRedirectionBase>	m_StdoutRedirHandle;
-	ScopedPtr<PipeRedirectionBase>	m_StderrRedirHandle;
+	std::unique_ptr<PipeRedirectionBase> m_StdoutRedirHandle;
+	std::unique_ptr<PipeRedirectionBase> m_StderrRedirHandle;
 
-	ScopedPtr<RecentIsoList>		m_RecentIsoList;
-	ScopedPtr<pxAppResources>		m_Resources;
+	std::unique_ptr<RecentIsoList> m_RecentIsoList;
+	std::unique_ptr<pxAppResources> m_Resources;
 
 public:
 	// Executor Thread for complex VM/System tasks.  This thread is used to execute such tasks
 	// in parallel to the main message pump, to allow the main pump to run without fear of
 	// blocked threads stalling the GUI.
 	ExecutorThread					SysExecutorThread;
-	ScopedPtr<SysCpuProviderPack>	m_CpuProviders;
-	ScopedPtr<SysMainMemory>	m_VmReserve;
+	std::unique_ptr<SysCpuProviderPack> m_CpuProviders;
+	std::unique_ptr<SysMainMemory> m_VmReserve;
 
 protected:
 	wxWindowID			m_id_MainFrame;

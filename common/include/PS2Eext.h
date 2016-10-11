@@ -20,17 +20,27 @@
 #include <string>
 #include <cstdarg>
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER)
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0600
+#endif
 #include <windows.h>
 #include <windowsx.h>
 #include <commctrl.h>
 
 #define EXPORT_C_(type) extern "C" type CALLBACK
-#else
+
+#elif defined(__unix__)
+
 #include <gtk/gtk.h>
 #include <cstring>
 
-#define EXPORT_C_(type) extern "C" __attribute__((stdcall,externally_visible,visibility("default"))) type
+#define EXPORT_C_(type) extern "C" __attribute__((stdcall, externally_visible, visibility("default"))) type
+
+#else
+
+#define EXPORT_C_(type) extern "C" __attribute__((stdcall, externally_visible, visibility("default"))) type
+
 #endif
 
 //#include "PS2Edefs.h"
@@ -183,7 +193,7 @@ struct PluginConf
     }
 };
 
-#ifdef __linux__
+#if defined(__unix__)
 
 static void SysMessage(const char *fmt, ...)
 {
@@ -243,6 +253,48 @@ static void __forceinline PluginNullAbout(const char *aboutText)
 
 #define ENTRY_POINT /* We don't need no stinkin' entry point! */
 
+
+#elif defined(__WXMAC__) || defined(__APPLE__)
+
+static void SysMessage(const char *fmt, ...)
+{
+    va_list list;
+    char msg[512];
+
+    va_start(list, fmt);
+    vsprintf(msg, fmt, list);
+    va_end(list);
+
+    if (msg[strlen(msg)-1] == '\n') msg[strlen(msg)-1] = 0;
+
+    // TODO OSX can we use WX MessageBox here or should Cocoa MessageBox used?
+}
+
+static void SysMessage(const wchar_t *fmt, ...)
+{
+    va_list list;
+    wchar_t msg[512];
+
+    va_start(list, fmt);
+    //vsprintf(msg, fmt, list);
+    va_end(list);
+
+    // TODO OSX can we use WX MessageBox here or should Cocoa MessageBox used?
+}
+
+static void __forceinline PluginNullConfigure(std::string desc, int &log)
+{
+    SysMessage("This space is intentionally left blank.");
+}
+
+static void __forceinline PluginNullAbout(const char *aboutText)
+{
+    SysMessage(aboutText);
+}
+
+#define ENTRY_POINT /* We don't need no stinkin' entry point! */ // TODO OSX WTF is this anyway?
+
+
 #else
 
 #define usleep(x)	Sleep(x / 1000)
@@ -264,7 +316,7 @@ static void __forceinline PluginNullConfigure(std::string desc, s32 &log)
 	/* To do: Write a dialog box that displays a dialog box with the text in desc,
 	   and a check box that says "Logging", checked if log !=0, and set log to
 	   1 if it is checked on return, and 0 if it isn't. */
-    SysMessage("This space intentionally left blank.");
+    SysMessage("This space is intentionally left blank.");
 }
 
 static void __forceinline PluginNullAbout(const char *aboutText)
@@ -288,7 +340,7 @@ static void __forceinline PluginNullConfigure(std::string desc, s32 &log)
 	/* To do: Write a dialog box that displays a dialog box with the text in desc,
 	and a check box that says "Logging", checked if log !=0, and set log to
 	1 if it is checked on return, and 0 if it isn't. */
-	SysMessage(L"This space intentionally left blank.");
+	SysMessage(L"This space is intentionally left blank.");
 }
 
 static void __forceinline PluginNullAbout(const wchar_t *aboutText)

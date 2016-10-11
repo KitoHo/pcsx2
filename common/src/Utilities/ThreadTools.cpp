@@ -37,7 +37,7 @@ ConsoleLogSource_Threading::ConsoleLogSource_Threading()
 {
 	static const TraceLogDescriptor myDesc =
 	{
-		L"pxThread",	L"pxThread",
+		L"p&xThread",	L"pxThread",
 		pxLt("Threading activity: start, detach, sync, deletion, etc.")
 	};
 
@@ -172,12 +172,12 @@ void Threading::pxThread::_pt_callback_cleanup( void* handle )
 
 Threading::pxThread::pxThread( const wxString& name )
 	: m_name( name )
+	, m_thread()
+	, m_native_id(0)
+	, m_native_handle(0)
+	, m_detached(true)		// start out with m_thread in detached/invalid state
+	, m_running(false)
 {
-	m_detached	= true;		// start out with m_thread in detached/invalid state
-	m_running	= false;
-
-	m_native_id		= 0;
-	m_native_handle	= 0;
 }
 
 // This destructor performs basic "last chance" cleanup, which is a blocking join
@@ -259,7 +259,7 @@ void Threading::pxThread::Start()
 
 	pxThreadLog.Write(GetName(), L"Calling pthread_create...");
 	if( pthread_create( &m_thread, NULL, _internal_callback, this ) != 0 )
-		throw Exception::ThreadCreationError( this );
+		throw Exception::ThreadCreationError( this ).SetDiagMsg( L"Thread creation error: "  + wxString(std::strerror(errno)) );
 
 	if( !m_sem_startup.WaitWithoutYield( wxTimeSpan( 0, 0, 3, 0 ) ) )
 	{
@@ -291,7 +291,7 @@ bool Threading::pxThread::Detach()
 {
 	AffinityAssert_DisallowFromSelf(pxDiagSpot);
 
-	if( _InterlockedExchange( &m_detached, true ) ) return false;
+	if( m_detached.exchange(true) ) return false;
 	pthread_detach( m_thread );
 	return true;
 }
@@ -386,7 +386,7 @@ bool Threading::pxThread::IsSelf() const
 
 bool Threading::pxThread::IsRunning() const
 {
-    return !!m_running;
+    return m_running;
 }
 
 void Threading::pxThread::AddListener( EventListener_Thread& evt )
@@ -669,7 +669,7 @@ void Threading::pxThread::OnCleanupInThread()
 
 	m_native_handle = 0;
 	m_native_id		= 0;
-	
+
 	m_evtsrc_OnDelete.Dispatch( 0 );
 }
 
@@ -781,70 +781,6 @@ void Threading::WaitEvent::Wait()
 	pthread_mutex_unlock( &mutex );
 }
 #endif
-
-// --------------------------------------------------------------------------------------
-//  InterlockedExchanges / AtomicExchanges (PCSX2's Helper versions)
-// --------------------------------------------------------------------------------------
-// define some overloads for InterlockedExchanges for commonly used types, like u32 and s32.
-// Note: For all of these atomic operations below to be atomic, the variables need to be 4-byte
-// aligned. Read: http://msdn.microsoft.com/en-us/library/ms684122%28v=vs.85%29.aspx
-
-__fi u32 Threading::AtomicRead(volatile u32& Target) {
-	return Target; // Properly-aligned 32-bit reads are atomic
-}
-__fi s32 Threading::AtomicRead(volatile s32& Target) {
-	return Target; // Properly-aligned 32-bit reads are atomic
-}
-
-__fi u32 Threading::AtomicExchange(volatile u32& Target, u32 value ) {
-	return _InterlockedExchange( (volatile vol_t*)&Target, value );
-}
-__fi s32 Threading::AtomicExchange( volatile s32& Target, s32 value ) {
-	return _InterlockedExchange( (volatile vol_t*)&Target, value );
-}
-
-__fi u32 Threading::AtomicExchangeAdd( volatile u32& Target, u32 value ) {
-	return _InterlockedExchangeAdd( (volatile vol_t*)&Target, value );
-}
-__fi s32 Threading::AtomicExchangeAdd( volatile s32& Target, s32 value ) {
-	return _InterlockedExchangeAdd( (volatile vol_t*)&Target, value );
-}
-
-__fi s32 Threading::AtomicExchangeSub( volatile s32& Target, s32 value ) {
-	return _InterlockedExchangeAdd( (volatile vol_t*)&Target, -value );
-}
-
-__fi u32 Threading::AtomicIncrement( volatile u32& Target ) {
-	return _InterlockedExchangeAdd( (volatile vol_t*)&Target, 1 );
-}
-__fi s32 Threading::AtomicIncrement( volatile s32& Target) {
-	return _InterlockedExchangeAdd( (volatile vol_t*)&Target, 1 );
-}
-
-__fi u32 Threading::AtomicDecrement( volatile u32& Target ) {
-	return _InterlockedExchangeAdd( (volatile vol_t*)&Target, -1 );
-}
-__fi s32 Threading::AtomicDecrement(volatile s32& Target) {
-	return _InterlockedExchangeAdd((volatile vol_t*)&Target, -1);
-}
-
-__fi void* Threading::_AtomicExchangePointer(volatile uptr& target, uptr value)
-{
-#ifdef _M_X86_64		// high-level atomic ops, please leave these 64 bit checks in place.
-	return (void*)_InterlockedExchange64((volatile s64*)&target, value);
-#else
-	return (void*)_InterlockedExchange((volatile vol_t*)&target, value);
-#endif
-}
-
-__fi void* Threading::_AtomicCompareExchangePointer(volatile uptr& target, uptr value, uptr comparand)
-{
-#ifdef _M_X86_64		// high-level atomic ops, please leave these 64 bit checks in place.
-	return (void*)_InterlockedCompareExchange64((volatile s64*)&target, value, comparand);
-#else
-	return (void*)_InterlockedCompareExchange((volatile vol_t*)&target, value, comparand);
-#endif
-}
 
 // --------------------------------------------------------------------------------------
 //  BaseThreadError

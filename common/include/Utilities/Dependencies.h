@@ -182,15 +182,15 @@ public:
 #include <wx/string.h>
 #include <wx/intl.h>
 #include <wx/log.h>
-
-#if defined(_WIN32) && wxMAJOR_VERSION >= 3
 #include <wx/crt.h>
+
+#if defined(_WIN32)
 // This deals with a mode_t redefinition conflict. The mode_t doesn't seem to be
 // used anywhere in w32pthreads, so I've chosen to use the wxWidgets mode_t
 // (I think it's unsigned int vs signed int)
 #include <wx/filefn.h>
 #define HAVE_MODE_T
-#endif 
+#endif
 
 #include <stdexcept>
 #include <cstring>		// string.h under c++
@@ -199,6 +199,8 @@ public:
 #include <vector>
 #include <list>
 #include <algorithm>
+#include <memory>
+#include <atomic>
 
 #include "Pcsx2Defs.h"
 
@@ -206,7 +208,9 @@ public:
 //  Handy Human-readable constants for common immediate values (_16kb -> _4gb)
 
 static const sptr _1kb		= 1024 * 1;
+static const sptr _4kb		= _1kb * 4;
 static const sptr _16kb		= _1kb * 16;
+static const sptr _32kb		= _1kb * 32;
 static const sptr _64kb		= _1kb * 64;
 static const sptr _128kb	= _1kb * 128;
 static const sptr _256kb	= _1kb * 256;
@@ -243,5 +247,4 @@ extern wxString fromAscii( const char* src );
 
 #include "Utilities/Assertions.h"
 #include "Utilities/Exceptions.h"
-#include "Utilities/ScopedPtr.h"
 #include "Utilities/ScopedAlloc.h"

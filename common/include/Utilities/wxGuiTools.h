@@ -28,7 +28,7 @@
 #if wxUSE_GUI
 
 #include "Dependencies.h"
-#include "ScopedPtr.h"
+#include <memory>
 #include <stack>
 
 #include <wx/wx.h>
@@ -270,13 +270,7 @@ void operator+=( wxSizer& target, const pxWindowAndFlags<WinType>& src )
 	target.Add( src.window, src.flags );
 }
 
-
-
-BEGIN_DECLARE_EVENT_TYPES()
-	// Added to the event queue by pxDialogWithHelpers
-	DECLARE_EVENT_TYPE( pxEvt_OnDialogCreated, -1 )
-END_DECLARE_EVENT_TYPES()
-
+wxDECLARE_EVENT(pxEvt_OnDialogCreated, wxCommandEvent);
 
 // --------------------------------------------------------------------------------------
 //  pxDialogCreationFlags
@@ -676,9 +670,7 @@ protected:
 	int			m_leading;
 
 	virtual void _DoWriteLn( const wxChar* msg );
-#if wxMAJOR_VERSION >= 3
 	void _DoWriteLn( const wxString msg );
-#endif
 	void _DoWrite( const wxChar* msg );
 
 public:
@@ -692,9 +684,7 @@ public:
 	pxWindowTextWriter& WriteLn( const wxChar* fmt );
 	pxWindowTextWriter& SetFont( const wxFont& font );
 	pxWindowTextWriter& Align( const wxAlignment& align );
-#if wxMAJOR_VERSION >= 3
 	pxWindowTextWriter& WriteLn( const wxString fmt );
-#endif
 		
 	pxWindowTextWriter& SetLeading( int lead )
 	{
@@ -702,18 +692,18 @@ public:
 		return *this;
 	}
 
-	pxWindowTextWriter& SetWeight( int weight );
-	pxWindowTextWriter& SetStyle( int style );
+	pxWindowTextWriter& SetWeight( wxFontWeight weight );
+	pxWindowTextWriter& SetStyle( wxFontStyle style );
 	pxWindowTextWriter& Normal();
 
 	pxWindowTextWriter& Bold()
 	{
-		return SetWeight(wxBOLD);
+		return SetWeight(wxFONTWEIGHT_BOLD);
 	}
 
 	pxWindowTextWriter& Italic()
 	{
-		return SetStyle(wxITALIC);
+		return SetStyle(wxFONTSTYLE_ITALIC);
 	}
 
 	pxWindowTextWriter& SetPos( const wxPoint& pos );
@@ -741,7 +731,7 @@ public:
 class MoreStockCursors
 {
 protected:
-	ScopedPtr<wxCursor>	m_arrowWait;
+	std::unique_ptr<wxCursor> m_arrowWait;
 
 public:
 	MoreStockCursors() { }
@@ -801,7 +791,7 @@ extern int pxGetCharHeight( const wxWindow& wind, int rows=1 );
 
 extern void pxSetToolTip( wxWindow* wind, const wxString& src );
 extern void pxSetToolTip( wxWindow& wind, const wxString& src );
-extern wxFont pxGetFixedFont( int ptsize=8, int weight=wxNORMAL );
+extern wxFont pxGetFixedFont( int ptsize = 8, wxFontWeight weight = wxFONTWEIGHT_NORMAL );
 
 extern pxDialogCreationFlags pxDialogFlags();
 

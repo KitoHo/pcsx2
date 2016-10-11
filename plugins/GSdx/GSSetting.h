@@ -25,22 +25,22 @@
 
 struct GSSetting
 {
-	uint32 id;
+	int32_t value;
 	std::string name;
 	std::string note;
 
-
-	GSSetting(uint32 id, const char* name, const char* note)
+	template< typename T>
+	explicit GSSetting(T value, const char* name, const char* note) :
+		value(static_cast<int32_t>(value)),
+		name(name),
+		note(note)
 	{
-		this->id = id;
-		this->name = name;
-		this->note = note;
 	}
 };
 
 const char* dialog_message(int ID, bool* updateText = NULL);
 
-#ifdef __linux__
+#ifndef _WIN32
 enum {
 	IDC_FILTER,
 	IDC_SKIPDRAWHACK,
@@ -71,6 +71,11 @@ enum {
 	IDC_SHADER_FX,
 	IDC_FXAA,
 	IDC_MIPMAP,
-	IDC_PRELOAD_GS
+	IDC_PRELOAD_GS,
+	IDC_FAST_TC_INV,
+	IDC_LARGE_FB,
+	IDC_LINEAR_PRESENT,
+	IDC_AUTO_FLUSH,
+	IDC_UNSCALE_POINT_LINE,
 };
 #endif

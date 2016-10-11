@@ -16,10 +16,8 @@
 #pragma once
 
 #include "App.h"
-
-BEGIN_DECLARE_EVENT_TYPES()
-	DECLARE_EVENT_TYPE(pxEvt_DockConsole, -1)
-END_DECLARE_EVENT_TYPES()
+#include <array>
+#include <memory>
 
 static const bool EnableThreadedLoggingTest = false; //true;
 
@@ -57,11 +55,7 @@ public:
 	pxLogConsole() {}
 
 protected:
-#if wxMAJOR_VERSION >= 3
 	virtual void DoLogRecord(wxLogLevel level, const wxString &message, const wxLogRecordInfo &info);
-#else
-	virtual void DoLog(wxLogLevel level, const wxChar *szString, time_t t);
-#endif
 };
 
 
@@ -75,7 +69,7 @@ class ConsoleTestThread : public Threading::pxThread
 	typedef pxThread _parent;
 
 protected:
-	volatile bool m_done;
+	std::atomic<bool> m_done;
 	void ExecuteTaskInThread();
 
 public:
@@ -88,37 +82,6 @@ public:
 	{
 		m_done = true;
 	}
-};
-
-// --------------------------------------------------------------------------------------
-//  pxLogTextCtrl
-// --------------------------------------------------------------------------------------
-class pxLogTextCtrl : public wxTextCtrl,
-	public EventListener_CoreThread,
-	public EventListener_Plugins
-{
-protected:
-	ScopedPtr<ScopedCoreThreadPause> m_IsPaused;
-	bool m_FreezeWrites;
-
-public:
-	pxLogTextCtrl(wxWindow* parent);
-	virtual ~pxLogTextCtrl() throw();
-
-	bool HasWriteLock() const { return m_FreezeWrites; }
-	void ConcludeIssue();
-
-#ifdef __WXMSW__
-	virtual void WriteText(const wxString& text);
-#endif
-
-protected:
-	virtual void OnThumbTrack(wxScrollWinEvent& event);
-	virtual void OnThumbRelease(wxScrollWinEvent& event);
-	virtual void OnResize( wxSizeEvent& evt );
-
-	void DispatchEvent( const CoreThreadStatus& status );
-	void DispatchEvent( const PluginEventType& evt );
 };
 
 // --------------------------------------------------------------------------------------
@@ -137,15 +100,11 @@ protected:
 		DeclareNoncopyableObject(ColorArray);
 
 	protected:
-		SafeArray<wxTextAttr>	m_table;
-		wxTextAttr				m_color_default;
+		std::array<wxTextAttr, ConsoleColors_Count> m_table;
 
 	public:
 		virtual ~ColorArray() throw();
 		ColorArray( int fontsize=8 );
-
-		void Create( int fontsize );
-		void Cleanup();
 
 		void SetFont( const wxFont& font );
 		void SetFont( int fontsize );
@@ -171,29 +130,29 @@ protected:
 
 protected:
 	ConLogConfig&	m_conf;
-	pxLogTextCtrl&	m_TextCtrl;
+	wxTextCtrl&		m_TextCtrl;
 	wxTimer			m_timer_FlushLimiter;
 	wxTimer			m_timer_FlushUnlocker;
 	ColorArray		m_ColorTable;
 
 	int				m_flushevent_counter;
 	bool			m_FlushRefreshLocked;
-	
+
 	// ----------------------------------------------------------------------------
 	//  Queue State Management Vars
 	// ----------------------------------------------------------------------------
 
 	// Boolean indicating if a flush message is already in the Main message queue.  Used
 	// to prevent spamming the main thread with redundant messages.
-	volatile bool			m_pendingFlushMsg;
+	std::atomic<bool>			m_pendingFlushMsg;
 
 	// This is a counter of the number of threads waiting for the Queue to flush.
-	volatile int			m_WaitingThreadsForFlush;
+	std::atomic<int>			m_WaitingThreadsForFlush;
 
 	// Indicates to the main thread if a child thread is actively writing to the log.  If
 	// true the main thread will sleep briefly to allow the child a chance to accumulate
 	// more messages (helps avoid rapid successive flushes on high volume logging).
-	volatile bool			m_ThreadedLogInQueue;
+	std::atomic<bool>			m_ThreadedLogInQueue;
 
 	// Used by threads waiting on the queue to flush.
 	Semaphore				m_sem_QueueFlushed;
@@ -215,20 +174,12 @@ protected:
 	// Threaded log spammer, useful for testing console logging performance.
 	// (alternatively you can enable Disasm logging in any recompiler and achieve
 	// a similar effect)
-	ScopedPtr<ConsoleTestThread>	m_threadlogger;
-
-	// ----------------------------------------------------------------------------
-	//  Window and Menu Object Handles
-	// ----------------------------------------------------------------------------
-
-	ScopedArray<wxMenuItem*>	m_sourceChecks;
+	std::unique_ptr<ConsoleTestThread> m_threadlogger;
 
 public:
 	// ctor & dtor
 	ConsoleLogFrame( MainEmuFrame *pParent, const wxString& szTitle, ConLogConfig& options );
 	virtual ~ConsoleLogFrame();
-
-	virtual void DockedMove();
 
 	// Retrieves the current configuration options settings for this box.
 	// (settings change if the user moves the window or changes the font size)
@@ -250,13 +201,13 @@ protected:
 
 	void OnToggleTheme(wxCommandEvent& event);
 	void OnFontSize(wxCommandEvent& event);
+	void OnAutoDock(wxCommandEvent& event);
 	void OnToggleSource(wxCommandEvent& event);
 	void OnToggleCDVDInfo(wxCommandEvent& event);
 
 	virtual void OnCloseWindow(wxCloseEvent& event);
 
 	void OnSetTitle( wxCommandEvent& event );
-	void OnDockedMove( wxCommandEvent& event );
 	void OnFlushUnlockerTimer( wxTimerEvent& evt );
 	void OnFlushEvent( wxCommandEvent& event );
 
@@ -266,6 +217,6 @@ protected:
 	void OnMoveAround( wxMoveEvent& evt );
 	void OnResize( wxSizeEvent& evt );
 	void OnActivate( wxActivateEvent& evt );
-	
+
 	void OnLoggingChanged();
 };

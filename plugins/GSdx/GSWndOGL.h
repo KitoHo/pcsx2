@@ -21,17 +21,18 @@
 
 #include "GSWnd.h"
 
-#if defined(__linux__)
+#if defined(__unix__)
 #include <X11/Xlib.h>
 #include <GL/glx.h>
 
-class GSWndOGL : public GSWndGL
+class GSWndOGL final : public GSWndGL
 {
 	Window     m_NativeWindow;
 	Display*   m_NativeDisplay;
 	GLXContext m_context;
 
-	PFNGLXSWAPINTERVALEXTPROC m_swapinterval;
+	PFNGLXSWAPINTERVALEXTPROC  m_swapinterval_ext;
+	PFNGLXSWAPINTERVALMESAPROC m_swapinterval_mesa;
 
 	void CreateContext(int major, int minor);
 	void CheckContext();

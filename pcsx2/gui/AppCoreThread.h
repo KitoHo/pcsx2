@@ -123,12 +123,12 @@ class AppCoreThread : public SysCoreThread
 	typedef SysCoreThread _parent;
 
 protected:
-	volatile bool m_resetCdvd;
-	
+	std::atomic<bool> m_resetCdvd;
+
 public:
 	AppCoreThread();
 	virtual ~AppCoreThread() throw();
-	
+
 	void ResetCdvd() { m_resetCdvd = true; }
 
 	virtual void Suspend( bool isBlocking=false );
@@ -237,7 +237,7 @@ public:
 struct ScopedCoreThreadPopup : public IScopedCoreThread
 {
 protected:
-	ScopedPtr<BaseScopedCoreThread>		m_scoped_core;
+	std::unique_ptr<BaseScopedCoreThread>		m_scoped_core;
 
 public:
 	ScopedCoreThreadPopup();

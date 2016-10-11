@@ -24,7 +24,7 @@
 #include "GSPng.h"
 #include "GSUtil.h"
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 
 //
 // GSSource
@@ -380,8 +380,11 @@ GSCapture::GSCapture()
 	: m_capturing(false), m_frame(0)
 	  , m_out_dir("/tmp/GSdx_Capture") // FIXME Later add an option
 {
-	m_out_dir = theApp.GetConfig("capture_out_dir", "/tmp/GSdx_Capture");
-	m_threads = theApp.GetConfig("capture_threads", 4);
+	m_out_dir = theApp.GetConfigS("capture_out_dir");
+	m_threads = theApp.GetConfigI("capture_threads");
+#if defined(__unix__)
+	m_compression_level = theApp.GetConfigI("png_compression_level");
+#endif
 }
 
 GSCapture::~GSCapture()
@@ -398,7 +401,7 @@ bool GSCapture::BeginCapture(float fps, GSVector2i recomendedResolution, float a
 
 	EndCapture();
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 
 	GSCaptureDlg dlg;
 
@@ -478,22 +481,19 @@ bool GSCapture::BeginCapture(float fps, GSVector2i recomendedResolution, float a
 
 	CComQIPtr<IGSSource>(m_src)->DeliverNewSegment();
 
-#elif __linux__
+#elif defined(__unix__)
 	// Note I think it doesn't support multiple depth creation
 	GSmkdir(m_out_dir.c_str());
 
 	// Really cheap recording
 	m_frame = 0;
 	// Add option !!!
-	m_size.x = theApp.GetConfig("capture_resx", 1280);
-	m_size.y = theApp.GetConfig("capture_resy", 1024);
+	m_size.x = theApp.GetConfigI("CaptureWidth");
+	m_size.y = theApp.GetConfigI("CaptureHeight");
 
-#ifdef __linux__
 	for(int i = 0; i < m_threads; i++) {
 		m_workers.push_back(new GSPng::Worker());
 	}
-#endif
-
 #endif
 
 	m_capturing = true;
@@ -512,7 +512,7 @@ bool GSCapture::DeliverFrame(const void* bits, int pitch, bool rgba)
 		return false;
 	}
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 
 	if(m_src)
 	{
@@ -521,11 +521,11 @@ bool GSCapture::DeliverFrame(const void* bits, int pitch, bool rgba)
 		return true;
 	}
 
-#elif __linux__
+#elif defined(__unix__)
 
 	std::string out_file = m_out_dir + format("/frame.%010d.png", m_frame);
-	//GSPng::Save(GSPng::RGB_PNG, out_file, (char*)bits, m_size.x, m_size.y, pitch);
-	m_workers[m_frame%m_threads]->Push(shared_ptr<GSPng::Transaction>(new GSPng::Transaction(GSPng::RGB_PNG, out_file, (char*)bits, m_size.x, m_size.y, pitch)));
+	//GSPng::Save(GSPng::RGB_PNG, out_file, (uint8*)bits, m_size.x, m_size.y, pitch, m_compression_level);
+	m_workers[m_frame%m_threads]->Push(shared_ptr<GSPng::Transaction>(new GSPng::Transaction(GSPng::RGB_PNG, out_file, static_cast<const uint8*>(bits), m_size.x, m_size.y, pitch, m_compression_level)));
 
 	m_frame++;
 
@@ -538,7 +538,7 @@ bool GSCapture::EndCapture()
 {
 	std::lock_guard<std::recursive_mutex> lock(m_lock);
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 
 	if(m_src)
 	{
@@ -554,7 +554,7 @@ bool GSCapture::EndCapture()
 		m_graph = NULL;
 	}
 
-#elif __linux__
+#elif defined(__unix__)
 	for(size_t i = 0; i < m_workers.size(); i++) {
 		m_workers[i]->Wait();
 	}
